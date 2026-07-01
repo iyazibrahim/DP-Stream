@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Media (generated at runtime — keep folder structure only)
+media/uploads/*
+media/hls/*
+media/thumbnails/*
+!media/uploads/.gitkeep
+!media/hls/.gitkeep
+!media/thumbnails/.gitkeep
+
+# Cursor / IDE / editor
+.cursor/
+.cursorrules
+.agent.md
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS junk
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs & debug
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local dev artifacts
+cookies.txt
+*.local
+.tmp/
+temp/
+
+# Test / scratch notes (not for repo)
+src/views/notes.txt
+notes.txt
+
+# Duplicate root asset (canonical copy lives in src/public/brand/)
+/dp-logo-white-text.svg

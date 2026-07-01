@@ -1,0 +1,264 @@
+<%- include('../partials/head.ejs', { title: 'Videos', user }) %>
+<section class="card">
+  <% if (passwordChanged) { %>
+    <p class="success">Password changed successfully.</p>
+  <% } %>
+
+  <div class="videos-toolbar">
+    <form method="get" action="/videos" class="video-search-row video-search-row-compact" id="videos-search-form" autocomplete="off">
+      <% if (selectedCourseId) { %>
+        <input type="hidden" name="courseId" value="<%= selectedCourseId %>" />
+      <% } %>
+      <div class="video-search-wrap">
+        <input
+          type="text"
+          name="q"
+          value="<%= searchQuery || '' %>"
+          placeholder="Search videos or courses"
+          aria-label="Search videos or courses"
+          id="videos-search-input"
+        />
+        <div id="videos-search-suggestions" class="search-suggestions" aria-live="polite"></div>
+      </div>
+      <button type="submit">Search</button>
+      <% if (searchQuery || selectedCourseId) { %>
+        <a class="tab-link" href="/videos">Clear</a>
+      <% } %>
+    </form>
+  </div>
+
+  <% if (selectedCourse) { %>
+    <div class="course-focus-banner">
+      <div>
+        <p class="meta-text">Selected Course</p>
+        <h2><%= selectedCourse.name %></h2>
+        <p><%= selectedCourse.description || 'No course description yet.' %></p>
+      </div>
+      <a class="tab-link" href="/videos<%= searchQuery ? ('?q=' + encodeURIComponent(searchQuery)) : '' %>">Back to all courses</a>
+    </div>
+  <% } %>
+
+  <div class="section-header-inline">
+    <h2>Available Videos</h2>
+    <span class="meta-text"><%= videos.length %> item(s)</span>
+  </div>
+  <% if (!videos.length) { %>
+    <p>No published videos match your current filter.</p>
+  <% } %>
+  <%
+    const VIDEO_PREVIEW_COUNT = 6;
+    const isFiltered = !!(searchQuery || selectedCourseId);
+    const videosPreview = isFiltered ? videos : videos.slice(0, VIDEO_PREVIEW_COUNT);
+    const videosRest   = isFiltered ? [] : videos.slice(VIDEO_PREVIEW_COUNT);
+  %>
+  <div class="video-list" id="videos-list-preview">
+    <% videosPreview.forEach((v) => { %>
+      <%- include('../partials/streaming-video-card.ejs', { v }) %>
+    <% }) %>
+  </div>
+
+  <% if (videosRest.length > 0) { %>
+    <div class="video-list video-list--hidden" id="videos-list-rest">
+      <% videosRest.forEach((v) => { %>
+        <%- include('../partials/streaming-video-card.ejs', { v }) %>
+      <% }) %>
+    </div>
+    <div id="view-all-videos-row" style="text-align:center; margin-top:1.2rem;">
+      <button type="button" id="view-all-videos-btn" class="tab-link">
+        View all <%= videos.length %> videos
+      </button>
+    </div>
+    <script>
+      (function () {
+        var btn = document.getElementById('view-all-videos-btn');
+        var rest = document.getElementById('videos-list-rest');
+        var row = document.getElementById('view-all-videos-row');
+        if (!btn || !rest) return;
+        btn.addEventListener('click', function () {
+          rest.style.display = '';
+          row.style.display = 'none';
+        });
+      })();
+    </script>
+  <% } %>
+</section>
+
+<% if (!selectedCourseId) { %>
+  <section class="card">
+    <div class="section-header-inline">
+      <h2>Available Courses</h2>
+      <span class="meta-text"><%= courses.length %> item(s)</span>
+    </div>
+    <% if (!courses.length) { %>
+      <p>No courses available yet.</p>
+    <% } %>
+    <div class="course-grid">
+      <% courses.forEach((c) => { %>
+        <a class="course-item" href="/videos?courseId=<%= c.id %><%= searchQuery ? ('&q=' + encodeURIComponent(searchQuery)) : '' %>">
+          <div class="video-thumb-wrap">
+            <% if (c.thumbnail_path) { %>
+              <img class="thumb" src="<%= c.thumbnail_path %>" alt="Thumbnail for <%= c.name %>" />
+            <% } else { %>
+              <div class="thumb thumb-fallback">No course thumbnail</div>
+            <% } %>
+          </div>
+          <div class="video-card-content">
+            <h3><%= c.name %></h3>
+            <p class="meta-text"><%= c.published_count || 0 %> published video(s)</p>
+            <p><%= c.description || 'No course description yet.' %></p>
+          </div>
+        </a>
+      <% }) %>
+    </div>
+  </section>
+<% } %>
+<%- include('../partials/foot.ejs') %>
+
+<script>
+(function () {
+  var input = document.getElementById('videos-search-input');
+  var form = document.getElementById('videos-search-form');
+  var box = document.getElementById('videos-search-suggestions');
+  if (!input || !box || !form) {
+    return;
+  }
+
+  var activeIndex = -1;
+  var currentMatches = [];
+
+  var rawSuggestions = [
+    <% videos.forEach((v, i) => { %>
+      { label: <%- JSON.stringify(v.title || '') %>, href: <%- JSON.stringify('/videos/' + v.id) %> }<%= (i < videos.length - 1 || courses.length) ? ',' : '' %>
+    <% }) %>
+    <% courses.forEach((c, i) => { %>
+      { label: <%- JSON.stringify(c.name || '') %>, href: <%- JSON.stringify('/videos?courseId=' + c.id) %> }<%= i < courses.length - 1 ? ',' : '' %>
+    <% }) %>
+  ];
+
+  var seen = Object.create(null);
+  var suggestions = rawSuggestions.filter(function (item) {
+    var key = String(item.label || '').trim().toLowerCase();
+    if (!key || seen[key]) {
+      return false;
+    }
+    seen[key] = true;
+    return true;
+  });
+
+  function hideSuggestions() {
+    box.innerHTML = '';
+    box.classList.remove('open');
+    activeIndex = -1;
+    currentMatches = [];
+    input.removeAttribute('aria-activedescendant');
+  }
+
+  function renderSuggestions(query) {
+    var q = String(query || '').trim().toLowerCase();
+    if (!q) {
+      hideSuggestions();
+      return;
+    }
+
+    var matches = suggestions
+      .filter(function (item) {
+        return item.label.toLowerCase().indexOf(q) !== -1;
+      })
+      .slice(0, 8);
+
+    currentMatches = matches;
+    activeIndex = -1;
+
+    if (!matches.length) {
+      hideSuggestions();
+      return;
+    }
+
+    box.innerHTML = matches.map(function (item, idx) {
+      var safeLabel = item.label.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return '<a class="search-suggestion-item" id="videos-search-item-' + idx + '" data-index="' + idx + '" href="' + item.href + '">' + safeLabel + '</a>';
+    }).join('');
+    box.classList.add('open');
+  }
+
+  function setActiveSuggestion(index) {
+    var items = box.querySelectorAll('.search-suggestion-item');
+    if (!items.length) {
+      activeIndex = -1;
+      return;
+    }
+    if (index < 0) {
+      index = items.length - 1;
+    }
+    if (index >= items.length) {
+      index = 0;
+    }
+    activeIndex = index;
+    items.forEach(function (item) {
+      item.classList.remove('active');
+      item.removeAttribute('aria-selected');
+    });
+    var active = items[activeIndex];
+    if (!active) {
+      return;
+    }
+    active.classList.add('active');
+    active.setAttribute('aria-selected', 'true');
+    input.setAttribute('aria-activedescendant', active.id);
+    active.scrollIntoView({ block: 'nearest' });
+  }
+
+  input.addEventListener('input', function () {
+    renderSuggestions(input.value);
+  });
+
+  input.addEventListener('focus', function () {
+    renderSuggestions(input.value);
+  });
+
+  input.addEventListener('keydown', function (event) {
+    if (!box.classList.contains('open')) {
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveSuggestion(activeIndex + 1);
+      return;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveSuggestion(activeIndex - 1);
+      return;
+    }
+    if (event.key === 'Escape') {
+      hideSuggestions();
+      return;
+    }
+    if (event.key === 'Enter' && activeIndex >= 0 && currentMatches[activeIndex]) {
+      event.preventDefault();
+      window.location.href = currentMatches[activeIndex].href;
+    }
+  });
+
+  box.addEventListener('mousemove', function (event) {
+    var item = event.target.closest('.search-suggestion-item');
+    if (!item) {
+      return;
+    }
+    var idx = Number(item.getAttribute('data-index'));
+    if (!Number.isNaN(idx)) {
+      setActiveSuggestion(idx);
+    }
+  });
+
+  form.addEventListener('submit', function () {
+    hideSuggestions();
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!box.contains(e.target) && e.target !== input) {
+      hideSuggestions();
+    }
+  });
+})();
+</script>

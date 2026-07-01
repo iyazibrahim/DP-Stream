@@ -1,0 +1,53 @@
+<%- include('../partials/head.ejs', { title: 'Login', user: null, bodyClass: 'auth-screen' }) %>
+<section class="login-panel card auth-card">
+  <div class="auth-logo-wrap">
+    <%- include('../partials/brand-logo.ejs', { logoHref: '/login' }) %>
+  </div>
+  <h1 class="login-title">Sign in</h1>
+  <p class="login-subtitle">Protected video portal</p>
+
+  <% if (error) { %><p class="error login-error"><%= error %></p><% } %>
+
+  <form method="post" action="/auth/login" class="form-grid login-form">
+    <label class="sr-only" for="login-email">Email address</label>
+    <input id="login-email" type="email" name="email" placeholder="Email address" autocomplete="username" required />
+
+    <label class="sr-only" for="login-password">Password</label>
+    <div class="login-password-wrap">
+      <input id="login-password" type="password" name="password" placeholder="Password" autocomplete="current-password" required />
+      <button type="button" class="login-password-toggle" id="login-password-toggle" aria-label="Show password">Show</button>
+    </div>
+
+    <div class="login-utility-row">
+      <% if (signupEnabled) { %>
+        <a class="login-help-link" href="/signup">Create account</a>
+      <% } else { %>
+        <span class="meta-text">Contact admin for access</span>
+      <% } %>
+    </div>
+
+    <button type="submit" class="login-submit">Sign in</button>
+  </form>
+  <button type="button" class="theme-toggle theme-toggle--auth" data-theme-toggle aria-label="Switch theme">Light</button>
+</section>
+<script>
+(function () {
+  var toggle = document.getElementById('login-password-toggle');
+  var input = document.getElementById('login-password');
+  if (!toggle || !input) {
+    return;
+  }
+  toggle.addEventListener('click', function () {
+    var showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    toggle.textContent = showing ? 'Show' : 'Hide';
+    toggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  });
+  var themeBtn = document.querySelector('.theme-toggle--auth');
+  if (themeBtn) {
+    var current = document.documentElement.getAttribute('data-theme') || 'dark';
+    themeBtn.textContent = current === 'light' ? 'Dark' : 'Light';
+  }
+})();
+</script>
+<%- include('../partials/foot.ejs') %>

@@ -1,0 +1,62 @@
+services:
+  db:
+    image: mysql:8.4
+    container_name: video-portal-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: video_portal
+      MYSQL_USER: video_app
+      MYSQL_PASSWORD: video_app_password
+      MYSQL_ROOT_PASSWORD: root_password_change_me
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./migrations:/docker-entrypoint-initdb.d
+
+  app:
+    build: .
+    container_name: video-portal-app
+    restart: unless-stopped
+    devices:
+      - /dev/dri/card1:/dev/dri/card1
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    group_add:
+      - "44"
+      - "110"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./media:/app/media
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # nginx:
+  #   image: nginx:1.27-alpine
+  #   container_name: video-portal-nginx
+  #   restart: unless-stopped
+  #   depends_on:
+  #     app:
+  #       condition: service_healthy
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  db_data:

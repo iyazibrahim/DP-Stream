@@ -1,0 +1,54 @@
+<%- include('../partials/head.ejs', { title: 'Profile', user }) %>
+<section class="grid-2">
+  <article class="card">
+    <h1>My Profile</h1>
+    <% if (profile) { %>
+      <p><strong>Email:</strong> <%= profile.email %></p>
+      <p><strong>Role:</strong> <%= profile.role %></p>
+      <p><strong>Completed videos:</strong> <%= profile.completed_count || 0 %></p>
+      <p><strong>Member since (MYT):</strong> <%= profile.created_at ? new Date(profile.created_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) : '-' %></p>
+    <% } %>
+  </article>
+
+  <article class="card">
+    <h2>Change Password</h2>
+    <p class="meta-text">Use at least 10 characters with uppercase, lowercase, and a number.</p>
+    <% if (error) { %><p class="error"><%= error %></p><% } %>
+    <% if (success) { %><p class="success"><%= success %></p><% } %>
+    <form method="post" action="/auth/profile/password" class="form-grid">
+      <label>Current Password</label>
+      <input type="password" name="currentPassword" required />
+      <label>New Password</label>
+      <input type="password" name="newPassword" minlength="10" required />
+      <label>Confirm New Password</label>
+      <input type="password" name="confirmPassword" minlength="10" required />
+      <button type="submit">Update Password</button>
+    </form>
+  </article>
+</section>
+
+<section class="card">
+  <h2>Completed Videos</h2>
+  <% if (!completedVideos.length) { %>
+    <p>No completed videos yet.</p>
+  <% } %>
+  <div class="video-list">
+    <% completedVideos.forEach((v) => { %>
+      <a class="video-item" href="/videos/<%= v.id %>">
+        <div>
+          <% if (v.thumbnail_path) { %>
+            <img class="thumb" src="<%= v.thumbnail_path %>" alt="Thumbnail for <%= v.title %>" />
+          <% } else { %>
+            <div class="thumb thumb-fallback">No thumbnail</div>
+          <% } %>
+        </div>
+        <div>
+          <h3><%= v.title %></h3>
+          <p class="meta-text">Completed (MYT): <%= new Date(v.completed_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %></p>
+          <span class="completed-pill">Completed</span>
+        </div>
+      </a>
+    <% }) %>
+  </div>
+</section>
+<%- include('../partials/foot.ejs') %>

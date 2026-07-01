@@ -1,0 +1,1458 @@
+<%- include('../partials/head.ejs', { title: 'Admin Dashboard', user }) %>
+<section class="card admin-tabs">
+  <a class="tab-link <%= activeTab === 'users' ? 'active' : '' %>" href="/admin?tab=users">User Management</a>
+  <a class="tab-link <%= activeTab === 'upload' ? 'active' : '' %>" href="/admin?tab=upload">Video Upload</a>
+  <a class="tab-link <%= activeTab === 'videos' ? 'active' : '' %>" href="/admin?tab=videos">Video Management</a>
+  <a class="tab-link <%= activeTab === 'courses' ? 'active' : '' %>" href="/admin?tab=courses">Courses</a>
+  <a class="tab-link <%= activeTab === 'monitor' ? 'active' : '' %>" href="/admin?tab=monitor">Monitoring</a>
+</section>
+
+<% if (activeTab === 'users') { %>
+  <section class="card compact-signup-row">
+    <div>
+      <h3>Public registration</h3>
+      <p class="meta-text">Public signup is currently <strong><%= allowSignup ? 'enabled' : 'disabled' %></strong>. When enabled, new accounts require admin approval before login.</p>
+    </div>
+    <form method="post" action="/admin/settings/signup-toggle">
+      <input type="hidden" name="enabled" value="<%= allowSignup ? 'false' : 'true' %>" />
+      <button type="submit"><%= allowSignup ? 'Disable' : 'Enable' %> signup</button>
+    </form>
+  </section>
+
+  <% if (pendingUsers && pendingUsers.length) { %>
+  <section class="card pending-users-card">
+    <h2>Pending approvals (<%= pendingUsers.length %>)</h2>
+    <table class="admin-table">
+      <thead><tr><th>Email</th><th>Registered</th><th>Actions</th></tr></thead>
+      <tbody>
+      <% pendingUsers.forEach((pu) => { %>
+        <tr>
+          <td><%= pu.email %></td>
+          <td><%= new Date(pu.created_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %></td>
+          <td class="row-actions">
+            <form method="post" action="/admin/users/<%= pu.id %>/approve" class="inline-form"><button type="submit" class="btn-success">Approve</button></form>
+            <form method="post" action="/admin/users/<%= pu.id %>/reject" class="inline-form"><button type="submit" class="btn-danger">Reject</button></form>
+          </td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+  </section>
+  <% } %>
+
+  <section class="grid-2">
+    <article class="card">
+      <h2>Create User</h2>
+      <form method="post" action="/admin/users/create" class="form-grid">
+        <label>Email</label>
+        <input type="email" name="email" required />
+        <label>Temporary Password</label>
+        <input type="text" name="password" minlength="10" required />
+        <p class="meta-text">Use at least 10 characters with uppercase, lowercase, and a number.</p>
+        <label>Role</label>
+        <select name="role">
+          <option value="viewer">Viewer</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button type="submit">Create user</button>
+      </form>
+      <p>Users created here must reset password on first login.</p>
+    </article>
+    <article class="card">
+      <h2>Anomaly Alerts (last 24h)</h2>
+      <% if (!anomalyAlerts.length) { %>
+        <p>No high-risk login anomalies detected.</p>
+      <% } %>
+      <% anomalyAlerts.forEach((a) => { %>
+        <div class="alert-row">
+          <strong><%= a.email %></strong>
+          <span class="meta-text">Logged in from <%= a.ip_count %> IPs, last seen: <%= new Date(a.last_seen).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %></span>
+        </div>
+      <% }) %>
+    </article>
+  </section>
+
+  <section class="card">
+    <h2>Users</h2>
+    <form method="get" action="/admin" class="user-filter-row">
+      <input type="hidden" name="tab" value="users" />
+      <input type="text" name="userQuery" value="<%= userQuery || '' %>" placeholder="Search by email" />
+      <button type="submit">Search</button>
+    </form>
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Email</th><th>Role</th><th>Status</th><th>Progress</th><th>Lockout</th><th>Action</th></tr></thead>
+      <tbody>
+      <% users.forEach((u) => { %>
+        <tr>
+          <td><%= u.id %></td>
+          <td><%= u.email %></td>
+          <td><%= u.role %></td>
+          <td><%= u.status %></td>
+          <td><%= u.completed_count || 0 %> completed</td>
+          <td>
+            <% if (u.locked_until) { %>
+              Locked until <%= new Date(u.locked_until).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %>
+            <% } else { %>
+              Not locked
+            <% } %>
+            <div>Attempts: <%= u.failed_login_attempts || 0 %></div>
+          </td>
+          <td>
+            <% if (u.status === 'pending') { %>
+              <form method="post" action="/admin/users/<%= u.id %>/approve" class="inline-form"><button type="submit" class="btn-success">Approve</button></form>
+              <form method="post" action="/admin/users/<%= u.id %>/reject" class="inline-form"><button type="submit" class="btn-danger">Reject</button></form>
+            <% } else if (u.status === 'active') { %>
+              <form method="post" action="/admin/users/<%= u.id %>/disable" class="inline-form"><button type="submit">Disable</button></form>
+            <% } else { %>
+              <form method="post" action="/admin/users/<%= u.id %>/enable" class="inline-form"><button type="submit">Enable</button></form>
+            <% } %>
+            <% if (u.status !== 'pending') { %>
+            <form method="post" action="/admin/users/<%= u.id %>/force-logout" class="inline-form"><button type="submit">Force logout</button></form>
+            <button
+              type="button"
+              class="open-reset-modal"
+              data-user-id="<%= u.id %>"
+              data-user-email="<%= u.email %>">
+              Reset password
+            </button>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+    <div class="pagination-row">
+      <% if (userPage > 1) { %>
+        <a class="tab-link" href="/admin?tab=users&userPage=<%= userPage - 1 %>&userQuery=<%= encodeURIComponent(userQuery || '') %>">Prev</a>
+      <% } %>
+      <span>Page <%= userPage %> / <%= totalUserPages %></span>
+      <% if (userPage < totalUserPages) { %>
+        <a class="tab-link" href="/admin?tab=users&userPage=<%= userPage + 1 %>&userQuery=<%= encodeURIComponent(userQuery || '') %>">Next</a>
+      <% } %>
+    </div>
+  </section>
+
+  <div id="reset-password-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <h3>Reset User Password</h3>
+      <p id="reset-user-email" class="meta-text"></p>
+      <form id="reset-password-form" method="post" class="form-grid">
+        <label>New Temporary Password</label>
+        <input type="password" id="reset-password-input" name="password" minlength="10" required />
+        <p class="meta-text">Use at least 10 characters with uppercase, lowercase, and a number.</p>
+        <label>Reconfirm Temporary Password</label>
+        <input type="password" id="reset-password-confirm" minlength="10" required />
+        <p id="reset-password-error" class="error" style="display:none;">Passwords do not match.</p>
+        <div class="modal-actions">
+          <button type="submit">Save and force reset</button>
+          <button type="button" id="close-reset-modal" class="linkish-btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const modal = document.getElementById('reset-password-modal');
+      const form = document.getElementById('reset-password-form');
+      const closeBtn = document.getElementById('close-reset-modal');
+      const emailText = document.getElementById('reset-user-email');
+      const passwordInput = document.getElementById('reset-password-input');
+      const confirmInput = document.getElementById('reset-password-confirm');
+      const errorText = document.getElementById('reset-password-error');
+      const triggerButtons = document.querySelectorAll('.open-reset-modal');
+
+      function closeModal() {
+        modal.style.display = 'none';
+        form.action = '';
+        form.reset();
+        errorText.style.display = 'none';
+      }
+
+      triggerButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const userId = btn.getAttribute('data-user-id');
+          const email = btn.getAttribute('data-user-email');
+          form.action = '/admin/users/' + userId + '/reset-password';
+          emailText.textContent = 'User: ' + email;
+          modal.style.display = 'flex';
+        });
+      });
+
+      closeBtn.addEventListener('click', closeModal);
+
+      modal.addEventListener('click', function (event) {
+        if (event.target === modal) {
+          closeModal();
+        }
+      });
+
+      form.addEventListener('submit', function (event) {
+        if (passwordInput.value !== confirmInput.value) {
+          event.preventDefault();
+          errorText.style.display = 'block';
+          return;
+        }
+        errorText.style.display = 'none';
+      });
+    })();
+  </script>
+<% } %>
+
+<% if (activeTab === 'upload') { %>
+  <section class="card">
+    <h2>Upload Video</h2>
+    <div class="upload-mode-toggle" role="tablist" aria-label="Upload mode">
+      <button type="button" class="tab-link active" id="mode-btn-normal" data-mode="normal">Upload Video</button>
+      <button type="button" class="tab-link" id="mode-btn-resumable" data-mode="resumable">Resumable Upload (pause &amp; resume)</button>
+    </div>
+
+    <div id="upload-panel-normal">
+      <p class="meta-text" style="margin-bottom:10px;">Files under 90 MB upload directly. Larger files are automatically split into small chunks so they always work through Cloudflare.</p>
+      <form method="post" action="/admin/videos/upload" enctype="multipart/form-data" class="form-grid" id="upload-form">
+        <label>Title</label>
+        <input type="text" name="title" placeholder="Video title (optional for multi-upload)" />
+        <label>Description</label>
+        <textarea name="description" rows="4" placeholder="Video description"></textarea>
+        <label>Tags (comma separated)</label>
+        <input type="text" name="tags" placeholder="onboarding, hr, policy" />
+        <label>Thumbnail (optional)</label>
+        <label class="dropzone" id="thumbnail-dropzone" for="thumbnail-file-input">
+          <span class="dropzone-title">Drop thumbnail here or click to choose</span>
+          <span class="dropzone-subtitle">PNG/JPG/WEBP • Recommended 1280x720</span>
+          <input type="file" id="thumbnail-file-input" name="thumbnailFile" accept="image/png,image/jpeg,image/webp" />
+          <span class="dropzone-file-list" id="thumbnail-file-name">No thumbnail selected</span>
+        </label>
+        <p class="meta-text">Recommended thumbnail size: 1280x720 (16:9). Display is auto-scaled to fit cards.</p>
+        <label>Video Files (.mp4, .mov, .mkv, .webm, .m4v, .avi)</label>
+        <label class="dropzone" id="video-dropzone" for="video-file-input">
+          <span class="dropzone-title">Drop videos here or click to choose</span>
+          <span class="dropzone-subtitle">Supports multi-select</span>
+          <input type="file" id="video-file-input" name="videoFile" accept="video/*" multiple required />
+          <span class="dropzone-file-list" id="video-file-name">No video selected</span>
+        </label>
+        <button type="submit">Upload selected videos</button>
+      </form>
+      <p class="meta-text">For multiple files: each file uploads as its own video. Keep this tab open while upload is in progress.</p>
+    </div>
+
+    <div id="upload-panel-resumable" style="display:none;">
+      <p class="meta-text">Use this for large files. If tab closes, choose the same file again and click resume.</p>
+      <form id="resumable-form" class="form-grid">
+        <label>Title</label>
+        <input type="text" id="resumable-title" placeholder="Video title (optional)" />
+        <label>Description</label>
+        <textarea id="resumable-description" rows="3" placeholder="Video description"></textarea>
+        <label>Tags</label>
+        <input type="text" id="resumable-tags" placeholder="onboarding, hr" />
+        <label>Thumbnail (optional)</label>
+        <label class="dropzone" id="resumable-thumb-dropzone" for="resumable-thumb-file">
+          <span class="dropzone-title">Drop thumbnail here or click to choose</span>
+          <span class="dropzone-subtitle">PNG/JPG/WEBP • Recommended 1280x720</span>
+          <input type="file" id="resumable-thumb-file" accept="image/png,image/jpeg,image/webp" />
+          <span class="dropzone-file-list" id="resumable-thumb-file-name">No thumbnail selected</span>
+        </label>
+        <label>Video File (.mp4, .mov, .mkv, .webm, .m4v, .avi)</label>
+        <label class="dropzone" id="resumable-dropzone" for="resumable-file">
+          <span class="dropzone-title">Drop large video here or click to choose</span>
+          <span class="dropzone-subtitle">Best for files over 2GB</span>
+          <input type="file" id="resumable-file" accept="video/*" required />
+          <span class="dropzone-file-list" id="resumable-file-name">No file selected</span>
+        </label>
+        <button type="submit">Start / Resume Chunked Upload</button>
+      </form>
+      <div id="resumable-status" class="upload-item">
+        <p class="meta-text">No resumable upload running.</p>
+      </div>
+    </div>
+
+    <div class="upload-status-list">
+      <h3>Current Upload Progress</h3>
+      <div id="upload-queue-list"></div>
+    </div>
+
+    <div class="upload-status-list">
+      <div class="section-header-inline">
+        <h3>Server Processing Queue</h3>
+        <button type="button" class="linkish-btn" id="clear-failed-uploads-btn">Clear failed jobs</button>
+      </div>
+      <div id="server-upload-queue"></div>
+    </div>
+  </section>
+
+  <script>
+    (function () {
+      const form = document.getElementById('upload-form');
+      const fileInput = document.getElementById('video-file-input');
+      const thumbInput = document.getElementById('thumbnail-file-input');
+      const queueList = document.getElementById('upload-queue-list');
+      const serverQueue = document.getElementById('server-upload-queue');
+      const clearFailedUploadsBtn = document.getElementById('clear-failed-uploads-btn');
+      const modeBtnNormal = document.getElementById('mode-btn-normal');
+      const modeBtnResumable = document.getElementById('mode-btn-resumable');
+      const panelNormal = document.getElementById('upload-panel-normal');
+      const panelResumable = document.getElementById('upload-panel-resumable');
+      const queueStoreKey = 'admin_upload_queue_state_v1';
+      const CHUNK_SIZE = 1 * 1024 * 1024;
+      const AUTO_CHUNK_THRESHOLD = 90 * 1024 * 1024; // auto-chunk files > 90 MB (Cloudflare body-size limit)
+      const INIT_TIMEOUT_MS = 20000;
+      const CHUNK_TIMEOUT_MS = 90000;
+      const COMPLETE_TIMEOUT_MS = 30000;
+      const CHUNK_RETRY_LIMIT = 3;
+      const ALLOWED_VIDEO_EXTENSIONS = ['.mp4', '.mov', '.mkv', '.webm', '.m4v', '.avi'];
+
+      let queue = [];
+
+      function saveQueue() {
+        localStorage.setItem(queueStoreKey, JSON.stringify(queue));
+      }
+
+      function loadQueue() {
+        queue = [];
+        saveQueue();
+      }
+
+      function renderQueue() {
+        if (!queue.length) {
+          queueList.innerHTML = '<p class="meta-text">No active uploads.</p>';
+          return;
+        }
+        queueList.innerHTML = queue.map(function (item) {
+          return '<div class="upload-item">'
+            + '<div class="upload-head"><strong>' + item.name + '</strong><span>' + item.status + '</span></div>'
+            + '<progress max="100" value="' + (item.progress || 0) + '"></progress>'
+            + '<p class="meta-text">' + (item.message || '') + '</p>'
+            + '</div>';
+        }).join('');
+      }
+
+      function removeItem(id) {
+        queue = queue.filter(function (item) { return item.id !== id; });
+        saveQueue();
+        renderQueue();
+      }
+
+      function updateItem(id, patch) {
+        queue = queue.map(function (item) {
+          if (item.id === id) {
+            return Object.assign({}, item, patch);
+          }
+          return item;
+        });
+        saveQueue();
+        renderQueue();
+        if (patch.status === 'done' || patch.status === 'failed' || patch.status === 'interrupted') {
+          setTimeout(function () { removeItem(id); }, 6000);
+        }
+      }
+
+      function addItem(fileName) {
+        const id = Date.now() + '-' + Math.random().toString(16).slice(2);
+        queue.unshift({ id: id, name: fileName, progress: 0, status: 'queued', message: 'Waiting to upload...' });
+        saveQueue();
+        renderQueue();
+        return id;
+      }
+
+      function setUploadMode(mode) {
+        const normal = mode !== 'resumable';
+        panelNormal.style.display = normal ? '' : 'none';
+        panelResumable.style.display = normal ? 'none' : '';
+        modeBtnNormal.classList.toggle('active', normal);
+        modeBtnResumable.classList.toggle('active', !normal);
+      }
+
+      async function fetchWithTimeout(url, options, timeoutMs) {
+        const controller = new AbortController();
+        const timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+        try {
+          return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      function isAllowedVideoFile(file) {
+        if (!file || !file.name) {
+          return false;
+        }
+        const name = String(file.name).toLowerCase();
+        const ext = name.slice(name.lastIndexOf('.'));
+        const mime = String(file.type || '').toLowerCase();
+        const extOk = ALLOWED_VIDEO_EXTENSIONS.indexOf(ext) >= 0;
+        const mimeOk = !mime || mime.startsWith('video/') || mime === 'application/octet-stream';
+        return extOk && mimeOk;
+      }
+
+      async function pollVideoStatus(itemId, videoId) {
+        const timer = setInterval(async function () {
+          try {
+            const res = await fetch('/admin/videos/' + videoId + '/status');
+            const s = await res.json();
+            if (s.status === 'published') {
+              updateItem(itemId, { progress: 100, status: 'done', message: 'Published successfully.' });
+              clearInterval(timer);
+            } else if (s.status === 'failed') {
+              updateItem(itemId, { status: 'failed', message: 'Transcode failed: ' + (s.last_error || 'Unknown error') });
+              clearInterval(timer);
+            } else {
+              updateItem(itemId, { status: 'processing', message: 'Transcoding... ' + (s.job_status || s.status) });
+            }
+          } catch (e) {
+            updateItem(itemId, { status: 'processing', message: 'Checking transcode status...' });
+          }
+        }, 2500);
+      }
+
+      function uploadOne(file, isSingleMode) {
+        const itemId = addItem(file.name);
+        const formData = new FormData();
+        const titleInput = form.querySelector('input[name="title"]');
+        const descInput = form.querySelector('textarea[name="description"]');
+        const tagsInput = form.querySelector('input[name="tags"]');
+        const thumbInput = form.querySelector('input[name="thumbnailFile"]');
+
+        const cleanName = file.name.replace(/\.[^/.]+$/, '');
+        formData.append('title', (titleInput.value || '').trim() || cleanName);
+        formData.append('description', (descInput.value || '').trim());
+        formData.append('tags', (tagsInput.value || '').trim());
+        formData.append('videoFile', file, file.name);
+
+        if (isSingleMode && thumbInput.files && thumbInput.files[0]) {
+          formData.append('thumbnailFile', thumbInput.files[0], thumbInput.files[0].name);
+        }
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/admin/videos/upload?ajax=1', true);
+        xhr.setRequestHeader('Accept', 'application/json');
+        xhr.setRequestHeader('X-CSRF-Token', window.getCsrfToken());
+
+        updateItem(itemId, { status: 'uploading', message: 'Uploading...' });
+
+        xhr.upload.addEventListener('progress', function (e) {
+          if (!e.lengthComputable) {
+            return;
+          }
+          const percent = Math.max(1, Math.round((e.loaded / e.total) * 100));
+          updateItem(itemId, { progress: percent, status: 'uploading', message: 'Uploading ' + percent + '%' });
+        });
+
+        xhr.addEventListener('load', function () {
+          if (xhr.status < 200 || xhr.status >= 300) {
+            updateItem(itemId, { status: 'failed', message: 'Upload failed (' + xhr.status + ')' });
+            return;
+          }
+          let data = {};
+          try {
+            data = JSON.parse(xhr.responseText || '{}');
+          } catch (e) {
+            updateItem(itemId, { status: 'failed', message: 'Invalid upload response from server.' });
+            return;
+          }
+          if (!data.videoId) {
+            updateItem(itemId, { status: 'failed', message: 'Upload response missing video ID.' });
+            return;
+          }
+          updateItem(itemId, { progress: 100, status: 'processing', message: 'Upload complete, transcoding started.' });
+          pollVideoStatus(itemId, data.videoId);
+        });
+
+        xhr.addEventListener('error', function () {
+          updateItem(itemId, { status: 'failed', message: 'Network error during upload.' });
+        });
+
+        xhr.send(formData);
+      }
+
+      // Chunked upload that reports progress into the normal queue UI.
+      // Used automatically for files > AUTO_CHUNK_THRESHOLD.
+      async function uploadOneChunked(file, meta, itemId, thumbnailFile) {
+        const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+        const uploadKey = [file.name, file.size, file.lastModified].join('|');
+        try {
+          updateItem(itemId, { status: 'uploading', progress: 0, message: 'Initializing chunked upload…' });
+          const initRes = await fetchWithTimeout('/admin/uploads/resumable/init', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.getCsrfToken() },
+            body: JSON.stringify({
+              uploadKey: uploadKey,
+              fileName: file.name,
+              mimeType: file.type || '',
+              fileSize: file.size,
+              totalChunks: totalChunks,
+              title: meta.title || file.name.replace(/\.[^/.]+$/, ''),
+              description: meta.description || '',
+              tags: meta.tags || ''
+            })
+          }, INIT_TIMEOUT_MS);
+          const initData = await initRes.json();
+          if (!initRes.ok || !initData.uploadId) {
+            throw new Error(initData.error || 'Unable to initialize upload');
+          }
+          const uploadId = initData.uploadId;
+          const uploaded = new Set((initData.uploadedChunks || []).map(Number));
+          for (var ci = 0; ci < totalChunks; ci++) {
+            if (uploaded.has(ci)) { continue; }
+            var cStart = ci * CHUNK_SIZE;
+            var cEnd = Math.min(file.size, cStart + CHUNK_SIZE);
+            var chunkBlob = file.slice(cStart, cEnd);
+            var chunkDone = false;
+            for (var attempt = 1; attempt <= CHUNK_RETRY_LIMIT; attempt++) {
+              var cFd = new FormData();
+              cFd.append('chunk', chunkBlob, file.name + '.part' + ci);
+              var cRes;
+              try {
+                cRes = await fetchWithTimeout(
+                  '/admin/uploads/resumable/' + uploadId + '/chunk?index=' + ci,
+                  { method: 'POST', headers: { 'X-CSRF-Token': window.getCsrfToken() }, body: cFd },
+                  CHUNK_TIMEOUT_MS
+                );
+              } catch (err) {
+                if (attempt >= CHUNK_RETRY_LIMIT) { throw new Error('Chunk ' + (ci + 1) + ' timed out after retries.'); }
+                updateItem(itemId, { message: 'Chunk ' + (ci + 1) + ' timeout. Retrying (' + attempt + '/' + CHUNK_RETRY_LIMIT + ')…' });
+                continue;
+              }
+              if (!cRes.ok) {
+                var errText = await cRes.text();
+                if (attempt >= CHUNK_RETRY_LIMIT) { throw new Error(errText || 'Chunk ' + ci + ' failed'); }
+                updateItem(itemId, { message: 'Chunk ' + (ci + 1) + ' error. Retrying…' });
+                continue;
+              }
+              chunkDone = true;
+              break;
+            }
+            if (!chunkDone) { throw new Error('Chunk ' + ci + ' could not be uploaded.'); }
+            var pct = Math.round(((ci + 1) / totalChunks) * 90);
+            updateItem(itemId, { progress: pct, status: 'uploading', message: 'Uploading ' + pct + '% (' + (ci + 1) + '/' + totalChunks + ' chunks)' });
+          }
+          updateItem(itemId, { progress: 95, status: 'uploading', message: 'Finalizing…' });
+          const doneFormData = new FormData();
+          if (thumbnailFile) {
+            doneFormData.append('thumbnailFile', thumbnailFile, thumbnailFile.name);
+          }
+          const doneRes = await fetchWithTimeout(
+            '/admin/uploads/resumable/' + uploadId + '/complete',
+            { method: 'POST', headers: { 'X-CSRF-Token': window.getCsrfToken() }, body: doneFormData },
+            COMPLETE_TIMEOUT_MS
+          );
+          const doneData = await doneRes.json();
+          if (!doneRes.ok || !doneData.videoId) {
+            throw new Error(doneData.error || 'Unable to finalize upload');
+          }
+          updateItem(itemId, { progress: 100, status: 'processing', message: 'Upload complete, transcoding started.' });
+          pollVideoStatus(itemId, doneData.videoId);
+        } catch (err) {
+          updateItem(itemId, { status: 'failed', message: 'Upload failed: ' + (err.message || err) });
+        }
+      }
+
+      async function renderServerQueue() {
+        try {
+          const res = await fetch('/admin/uploads/active');
+          const data = await res.json();
+          const items = (data && data.items) ? data.items : [];
+          if (!items.length) {
+            serverQueue.innerHTML = '<p class="meta-text">No pending/failed server-side jobs.</p>';
+            return;
+          }
+          serverQueue.innerHTML = items.map(function (row) {
+            return '<div class="upload-item compact">'
+              + '<div class="upload-head"><strong>#' + row.video_id + ' ' + row.title + '</strong><span>' + (row.job_status || row.status) + '</span></div>'
+              + '<p class="meta-text">Attempts: ' + (row.attempts || 0) + (row.last_error ? (' | Error: ' + row.last_error) : '') + '</p>'
+              + '</div>';
+          }).join('');
+        } catch (e) {
+          serverQueue.innerHTML = '<p class="meta-text">Unable to load server queue right now.</p>';
+        }
+      }
+
+      async function clearFailedUploads() {
+        if (!clearFailedUploadsBtn) {
+          return;
+        }
+        clearFailedUploadsBtn.disabled = true;
+        const originalText = clearFailedUploadsBtn.textContent;
+        clearFailedUploadsBtn.textContent = 'Clearing...';
+        try {
+          const res = await fetch('/admin/uploads/clear-failed', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': window.getCsrfToken() }
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error((data && data.error) || 'Unable to clear failed jobs');
+          }
+          clearFailedUploadsBtn.textContent = (data.cleared || 0) > 0 ? 'Cleared' : 'Nothing to clear';
+          renderServerQueue();
+        } catch (err) {
+          clearFailedUploadsBtn.textContent = 'Clear failed jobs';
+          alert(err.message || 'Unable to clear failed jobs');
+          clearFailedUploadsBtn.disabled = false;
+          return;
+        }
+
+        setTimeout(function () {
+          clearFailedUploadsBtn.textContent = originalText;
+          clearFailedUploadsBtn.disabled = false;
+        }, 2000);
+      }
+
+      if (!form) {
+        return;
+      }
+
+      if (modeBtnNormal && modeBtnResumable) {
+        modeBtnNormal.addEventListener('click', function () { setUploadMode('normal'); });
+        modeBtnResumable.addEventListener('click', function () { setUploadMode('resumable'); });
+        setUploadMode('normal');
+      }
+
+      loadQueue();
+      renderQueue();
+      renderServerQueue();
+      setInterval(renderServerQueue, 4000);
+
+      if (clearFailedUploadsBtn) {
+        clearFailedUploadsBtn.addEventListener('click', clearFailedUploads);
+      }
+
+      const resumableForm = document.getElementById('resumable-form');
+      const resumableFileInput = document.getElementById('resumable-file');
+      const resumableTitle = document.getElementById('resumable-title');
+      const resumableDescription = document.getElementById('resumable-description');
+      const resumableTags = document.getElementById('resumable-tags');
+      const resumableThumbInput = document.getElementById('resumable-thumb-file');
+      const resumableStatus = document.getElementById('resumable-status');
+
+      const videoDropzone = document.getElementById('video-dropzone');
+      const thumbDropzone = document.getElementById('thumbnail-dropzone');
+      const resumableDropzone = document.getElementById('resumable-dropzone');
+      const resumableThumbDropzone = document.getElementById('resumable-thumb-dropzone');
+      const videoFileName = document.getElementById('video-file-name');
+      const thumbFileName = document.getElementById('thumbnail-file-name');
+      const resumableFileName = document.getElementById('resumable-file-name');
+      const resumableThumbFileName = document.getElementById('resumable-thumb-file-name');
+
+      function fileListLabel(files, fallbackLabel) {
+        var list = Array.from(files || []);
+        if (!list.length) {
+          return fallbackLabel;
+        }
+        if (list.length === 1) {
+          return list[0].name;
+        }
+        return list.length + ' files selected';
+      }
+
+      function bindDropzone(dropzoneEl, inputEl, labelEl, fallbackLabel) {
+        if (!dropzoneEl || !inputEl || !labelEl) {
+          return;
+        }
+
+        function refreshLabel() {
+          labelEl.textContent = fileListLabel(inputEl.files, fallbackLabel);
+        }
+
+        inputEl.addEventListener('change', refreshLabel);
+
+        ['dragenter', 'dragover'].forEach(function (eventName) {
+          dropzoneEl.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzoneEl.classList.add('dragover');
+          });
+        });
+
+        ['dragleave', 'dragend'].forEach(function (eventName) {
+          dropzoneEl.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzoneEl.classList.remove('dragover');
+          });
+        });
+
+        dropzoneEl.addEventListener('drop', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          dropzoneEl.classList.remove('dragover');
+          var dt = event.dataTransfer;
+          if (!dt || !dt.files || !dt.files.length) {
+            return;
+          }
+          inputEl.files = dt.files;
+          refreshLabel();
+        });
+      }
+
+      bindDropzone(videoDropzone, fileInput, videoFileName, 'No video selected');
+      bindDropzone(thumbDropzone, thumbInput, thumbFileName, 'No thumbnail selected');
+      bindDropzone(resumableDropzone, resumableFileInput, resumableFileName, 'No file selected');
+      bindDropzone(resumableThumbDropzone, resumableThumbInput, resumableThumbFileName, 'No thumbnail selected');
+
+      function setResumableStatus(text, percent) {
+        const p = typeof percent === 'number' ? Math.max(0, Math.min(100, percent)) : null;
+        resumableStatus.innerHTML = '<p class="meta-text">' + text + '</p>'
+          + (p === null ? '' : '<progress max="100" value="' + p + '"></progress>');
+      }
+
+      async function pollChunkedVideo(videoId) {
+        const timer = setInterval(async function () {
+          try {
+            const res = await fetch('/admin/videos/' + videoId + '/status');
+            const s = await res.json();
+            if (s.status === 'published') {
+              setResumableStatus('Chunked upload done. Video published.', 100);
+              clearInterval(timer);
+            } else if (s.status === 'failed') {
+              setResumableStatus('Chunked upload transcode failed: ' + (s.last_error || 'Unknown error'));
+              clearInterval(timer);
+            } else {
+              setResumableStatus('Transcoding... ' + (s.job_status || s.status));
+            }
+          } catch (e) {
+            setResumableStatus('Checking transcode status...');
+          }
+        }, 3000);
+      }
+
+      async function uploadChunk(uploadId, file, index, totalChunks) {
+        const start = index * CHUNK_SIZE;
+        const end = Math.min(file.size, start + CHUNK_SIZE);
+        const chunkBlob = file.slice(start, end);
+        for (let attempt = 1; attempt <= CHUNK_RETRY_LIMIT; attempt += 1) {
+          const fd = new FormData();
+          fd.append('chunk', chunkBlob, file.name + '.part' + index);
+
+          let response;
+          try {
+            response = await fetchWithTimeout('/admin/uploads/resumable/' + uploadId + '/chunk?index=' + index, {
+              method: 'POST',
+              headers: { 'X-CSRF-Token': window.getCsrfToken() },
+              body: fd
+            }, CHUNK_TIMEOUT_MS);
+          } catch (err) {
+            if (attempt >= CHUNK_RETRY_LIMIT) {
+              throw new Error('Chunk ' + (index + 1) + ' timed out after multiple retries.');
+            }
+            setResumableStatus('Chunk ' + (index + 1) + ' timeout. Retrying (' + attempt + '/' + CHUNK_RETRY_LIMIT + ')...');
+            continue;
+          }
+
+          if (!response.ok) {
+            const text = await response.text();
+            if (attempt >= CHUNK_RETRY_LIMIT) {
+              throw new Error(text || ('Chunk upload failed at index ' + index));
+            }
+            setResumableStatus('Chunk ' + (index + 1) + ' failed. Retrying (' + attempt + '/' + CHUNK_RETRY_LIMIT + ')...');
+            continue;
+          }
+
+          const percent = Math.round(((index + 1) / totalChunks) * 100);
+          setResumableStatus('Uploaded chunk ' + (index + 1) + ' of ' + totalChunks, percent);
+          return;
+        }
+      }
+
+      if (resumableForm) {
+        resumableForm.addEventListener('submit', async function (event) {
+          event.preventDefault();
+          const submitBtn = resumableForm.querySelector('button[type="submit"]');
+          const file = (resumableFileInput.files || [])[0];
+          if (!file) {
+            return;
+          }
+          if (!isAllowedVideoFile(file)) {
+            setResumableStatus('Only video files are allowed (.mp4, .mov, .mkv, .webm, .m4v, .avi).');
+            return;
+          }
+
+          const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+          const uploadKey = [file.name, file.size, file.lastModified].join('|');
+
+          try {
+            if (submitBtn) {
+              submitBtn.disabled = true;
+            }
+            setResumableStatus('Initializing resumable upload...');
+            const initRes = await fetchWithTimeout('/admin/uploads/resumable/init', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.getCsrfToken() },
+              body: JSON.stringify({
+                uploadKey: uploadKey,
+                fileName: file.name,
+                mimeType: file.type || '',
+                fileSize: file.size,
+                totalChunks: totalChunks,
+                title: (resumableTitle.value || '').trim(),
+                description: (resumableDescription.value || '').trim(),
+                tags: (resumableTags.value || '').trim()
+              })
+            }, INIT_TIMEOUT_MS);
+            const initData = await initRes.json();
+            if (!initRes.ok || !initData.uploadId) {
+              throw new Error(initData.error || 'Unable to initialize resumable upload');
+            }
+
+            const uploaded = new Set((initData.uploadedChunks || []).map(function (n) { return Number(n); }));
+            setResumableStatus('Uploading ' + totalChunks + ' chunks...', uploaded.size ? Math.round((uploaded.size / totalChunks) * 100) : 0);
+
+            for (let i = 0; i < totalChunks; i += 1) {
+              if (!uploaded.has(i)) {
+                await uploadChunk(initData.uploadId, file, i, totalChunks);
+              }
+            }
+
+            setResumableStatus('Finalizing upload...');
+            const resumableDoneFormData = new FormData();
+            const resumableThumbFile = (resumableThumbInput && resumableThumbInput.files && resumableThumbInput.files[0]) ? resumableThumbInput.files[0] : null;
+            if (resumableThumbFile) {
+              resumableDoneFormData.append('thumbnailFile', resumableThumbFile, resumableThumbFile.name);
+            }
+            const doneRes = await fetchWithTimeout('/admin/uploads/resumable/' + initData.uploadId + '/complete', {
+              method: 'POST',
+              headers: { 'X-CSRF-Token': window.getCsrfToken() },
+              body: resumableDoneFormData
+            }, COMPLETE_TIMEOUT_MS);
+            const doneData = await doneRes.json();
+            if (!doneRes.ok || !doneData.videoId) {
+              throw new Error(doneData.error || 'Unable to finalize upload');
+            }
+
+            setResumableStatus('Upload complete. Transcoding started.', 100);
+            pollChunkedVideo(doneData.videoId);
+          } catch (err) {
+            setResumableStatus('Resumable upload failed: ' + (err.message || err));
+          } finally {
+            if (submitBtn) {
+              submitBtn.disabled = false;
+            }
+          }
+        });
+      }
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) {
+          return;
+        }
+
+        const titleVal = (form.querySelector('input[name="title"]').value || '').trim();
+        const descVal = (form.querySelector('textarea[name="description"]').value || '').trim();
+        const tagsVal = (form.querySelector('input[name="tags"]').value || '').trim();
+        const singleMode = files.length === 1;
+
+        files.forEach(function (file) {
+          if (!isAllowedVideoFile(file)) {
+            const itemId = addItem(file.name || 'Unknown file');
+            updateItem(itemId, { status: 'failed', message: 'Rejected: not an allowed video type.' });
+            return;
+          }
+          if (file.size > AUTO_CHUNK_THRESHOLD) {
+            // Large file: silently use chunked upload so Cloudflare body limits are bypassed
+            const itemId = addItem(file.name);
+            const cleanTitle = titleVal || file.name.replace(/\.[^/.]+$/, '');
+            const thumbFile = (singleMode && thumbInput.files && thumbInput.files[0]) ? thumbInput.files[0] : null;
+            uploadOneChunked(file, { title: cleanTitle, description: descVal, tags: tagsVal }, itemId, thumbFile);
+          } else {
+            uploadOne(file, singleMode);
+          }
+        });
+
+        if (singleMode) {
+          videoFileName.textContent = fileListLabel(fileInput.files, 'No video selected');
+        }
+      });
+    })();
+  </script>
+<% } %>
+
+<% if (activeTab === 'videos') { %>
+  <section class="card">
+    <div class="section-header-inline">
+      <h2>Video Display Order</h2>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <span id="video-order-status" class="meta-text"></span>
+        <button type="button" id="save-video-order-btn" class="tab-link">Save Order</button>
+      </div>
+    </div>
+    <p class="meta-text">Drag rows to set the order videos appear on the viewer page. The top 6 display by default.</p>
+    <% if (!publishedVideosForOrder.length) { %>
+      <p class="meta-text">No published videos yet.</p>
+    <% } else { %>
+      <ul id="video-order-list" class="video-order-list">
+        <% publishedVideosForOrder.forEach(function(v) { %>
+          <li class="video-order-item" draggable="true" data-id="<%= v.id %>">
+            <span class="drag-handle" aria-hidden="true">&#9776;</span>
+            <% if (v.thumbnail_path) { %>
+              <img src="<%= v.thumbnail_path %>" class="video-order-thumb" alt="" />
+            <% } else { %>
+              <span class="video-order-thumb video-order-thumb-fallback">No img</span>
+            <% } %>
+            <span class="video-order-title"><%= v.title %></span>
+          </li>
+        <% }) %>
+      </ul>
+    <% } %>
+  </section>
+
+  <script>
+    (function () {
+      var list = document.getElementById('video-order-list');
+      var saveBtn = document.getElementById('save-video-order-btn');
+      var status = document.getElementById('video-order-status');
+      if (!list || !saveBtn) { return; }
+
+      var dragging = null;
+      var dragSrc = null;
+
+      list.addEventListener('dragstart', function (e) {
+        dragging = e.target.closest('li');
+        dragSrc = dragging;
+        if (dragging) {
+          dragging.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+        }
+      });
+
+      list.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        var target = e.target.closest('li');
+        if (!target || target === dragging) { return; }
+        var rect = target.getBoundingClientRect();
+        var mid = rect.top + rect.height / 2;
+        if (e.clientY < mid) {
+          list.insertBefore(dragging, target);
+        } else {
+          list.insertBefore(dragging, target.nextSibling);
+        }
+      });
+
+      list.addEventListener('dragend', function () {
+        if (dragging) { dragging.classList.remove('dragging'); }
+        dragging = null;
+        dragSrc = null;
+      });
+
+      saveBtn.addEventListener('click', async function () {
+        var ids = Array.from(list.querySelectorAll('li[data-id]')).map(function (el) {
+          return Number(el.getAttribute('data-id'));
+        });
+        saveBtn.disabled = true;
+        status.textContent = 'Saving\u2026';
+        try {
+          var res = await fetch('/admin/videos/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.getCsrfToken() },
+            body: JSON.stringify({ ids: ids })
+          });
+          var data = await res.json();
+          if (!res.ok) { throw new Error((data && data.error) || 'Failed to save order'); }
+          status.textContent = 'Order saved!';
+          setTimeout(function () { status.textContent = ''; }, 2500);
+        } catch (err) {
+          status.textContent = 'Error: ' + (err.message || err);
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
+    })();
+  </script>
+
+  <section class="card">
+    <h2>Video Management</h2>
+    <form method="get" action="/admin" class="video-filter-row">
+      <input type="hidden" name="tab" value="videos" />
+      <div class="video-filter-main">
+        <input type="text" name="videoQuery" value="<%= videoFilters.videoQuery || '' %>" placeholder="Search title or description" />
+      </div>
+      <div class="video-filter-meta">
+        <input type="text" name="tag" value="<%= videoFilters.tag || '' %>" placeholder="Tag" />
+        <select name="status">
+          <option value="">All statuses</option>
+          <option value="processing" <%= videoFilters.status === 'processing' ? 'selected' : '' %>>Processing</option>
+          <option value="published" <%= videoFilters.status === 'published' ? 'selected' : '' %>>Published</option>
+          <option value="hidden" <%= videoFilters.status === 'hidden' ? 'selected' : '' %>>Hidden</option>
+          <option value="failed" <%= videoFilters.status === 'failed' ? 'selected' : '' %>>Failed</option>
+        </select>
+        <select name="sort">
+          <option value="newest" <%= videoFilters.sort === 'newest' ? 'selected' : '' %>>Newest</option>
+          <option value="oldest" <%= videoFilters.sort === 'oldest' ? 'selected' : '' %>>Oldest</option>
+          <option value="title" <%= videoFilters.sort === 'title' ? 'selected' : '' %>>Title</option>
+          <option value="status" <%= videoFilters.sort === 'status' ? 'selected' : '' %>>Status</option>
+        </select>
+        <button type="submit">Apply</button>
+      </div>
+    </form>
+
+    <% videos.forEach((v) => { %>
+      <details class="video-collapsible">
+        <summary>
+          <span><strong>#<%= v.id %> <%= v.title %></strong></span>
+          <span>Status: <%= v.status %></span>
+          <span>Created: <%= new Date(v.created_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %></span>
+        </summary>
+        <div class="video-collapsible-body">
+          <div class="video-thumb-current-wrap">
+            <% if (v.thumbnail_path) { %>
+              <img src="<%= v.thumbnail_path %>" alt="Current thumbnail" class="thumb video-thumb-current" id="video-thumb-preview-<%= v.id %>" />
+            <% } else { %>
+              <div class="thumb thumb-fallback video-thumb-current" id="video-thumb-preview-<%= v.id %>">No thumbnail</div>
+            <% } %>
+          </div>
+          <p class="meta-text">Job: <%= v.job_status || '-' %> <% if (v.job_attempts) { %>(attempts: <%= v.job_attempts %>)<% } %></p>
+          <% if (v.job_error) { %><p class="error"><%= v.job_error %></p><% } %>
+          <form method="post" action="/admin/videos/<%= v.id %>/update" enctype="multipart/form-data" class="form-grid">
+            <label>Title</label>
+            <input type="text" name="title" value="<%= v.title %>" required />
+            <label>Description</label>
+            <textarea name="description" rows="3"><%= v.description || '' %></textarea>
+            <label>Tags</label>
+            <input type="text" name="tags" value="<%= v.tags || '' %>" />
+            <label>Replace Thumbnail</label>
+            <label class="dropzone video-thumb-dropzone" for="video-thumb-input-<%= v.id %>">
+              <span class="dropzone-title">Drop thumbnail here or click to choose</span>
+              <span class="dropzone-subtitle">PNG/JPG/WEBP</span>
+              <input
+                type="file"
+                id="video-thumb-input-<%= v.id %>"
+                class="video-thumb-input"
+                name="thumbnailFile"
+                accept="image/png,image/jpeg,image/webp"
+                data-preview-id="video-thumb-preview-<%= v.id %>"
+                data-file-label-id="video-thumb-name-<%= v.id %>"
+              />
+              <span class="dropzone-file-list" id="video-thumb-name-<%= v.id %>">No thumbnail selected</span>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" name="removeThumbnail" value="true" />
+              <span>Remove existing thumbnail</span>
+            </label>
+            <button type="submit">Save changes</button>
+          </form>
+          <div class="inline-actions">
+            <form method="post" action="/admin/videos/<%= v.id %>/publish"><button type="submit">Publish</button></form>
+            <form method="post" action="/admin/videos/<%= v.id %>/unpublish"><button type="submit">Hide</button></form>
+            <form method="post" action="/admin/videos/<%= v.id %>/retry"><button type="submit">Retry transcode</button></form>
+            <form method="post" action="/admin/videos/<%= v.id %>/delete" onsubmit="return confirm('Delete this video and all related media?');"><button type="submit" class="danger">Delete</button></form>
+          </div>
+        </div>
+      </details>
+    <% }) %>
+
+    <div class="pagination-row">
+      <% if (videoPage > 1) { %>
+        <a class="tab-link" href="/admin?tab=videos&videoPage=<%= videoPage - 1 %>&videoQuery=<%= encodeURIComponent(videoFilters.videoQuery || '') %>&tag=<%= encodeURIComponent(videoFilters.tag || '') %>&status=<%= encodeURIComponent(videoFilters.status || '') %>&sort=<%= encodeURIComponent(videoFilters.sort || 'newest') %>">Prev</a>
+      <% } %>
+      <span>Page <%= videoPage %> / <%= totalVideoPages %></span>
+      <% if (videoPage < totalVideoPages) { %>
+        <a class="tab-link" href="/admin?tab=videos&videoPage=<%= videoPage + 1 %>&videoQuery=<%= encodeURIComponent(videoFilters.videoQuery || '') %>&tag=<%= encodeURIComponent(videoFilters.tag || '') %>&status=<%= encodeURIComponent(videoFilters.status || '') %>&sort=<%= encodeURIComponent(videoFilters.sort || 'newest') %>">Next</a>
+      <% } %>
+    </div>
+  </section>
+
+  <script>
+    (function () {
+      var thumbInputs = Array.prototype.slice.call(document.querySelectorAll('.video-thumb-input'));
+      if (!thumbInputs.length) {
+        return;
+      }
+
+      function setPreviewFromFile(input, file) {
+        if (!file) {
+          return;
+        }
+        var previewId = input.getAttribute('data-preview-id');
+        var labelId = input.getAttribute('data-file-label-id');
+        var preview = previewId ? document.getElementById(previewId) : null;
+        var label = labelId ? document.getElementById(labelId) : null;
+        if (label) {
+          label.textContent = file.name;
+        }
+        if (!preview || !file.type || file.type.indexOf('image/') !== 0) {
+          return;
+        }
+
+        var url = URL.createObjectURL(file);
+        if (preview.tagName === 'IMG') {
+          preview.src = url;
+          return;
+        }
+
+        var img = document.createElement('img');
+        img.className = 'thumb video-thumb-current';
+        img.id = preview.id;
+        img.alt = 'Thumbnail preview';
+        img.src = url;
+        preview.replaceWith(img);
+      }
+
+      function bindDropzone(input) {
+        var dropzone = input.closest('.dropzone');
+        if (!dropzone) {
+          return;
+        }
+
+        input.addEventListener('change', function () {
+          var file = (input.files || [])[0];
+          setPreviewFromFile(input, file);
+        });
+
+        ['dragenter', 'dragover'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.add('dragover');
+          });
+        });
+
+        ['dragleave', 'dragend'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.remove('dragover');
+          });
+        });
+
+        dropzone.addEventListener('drop', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          dropzone.classList.remove('dragover');
+          var dt = event.dataTransfer;
+          var file = dt && dt.files && dt.files[0];
+          if (!file) {
+            return;
+          }
+          input.files = dt.files;
+          setPreviewFromFile(input, file);
+        });
+      }
+
+      thumbInputs.forEach(bindDropzone);
+    })();
+  </script>
+<% } %>
+
+<% if (activeTab === 'courses') { %>
+  <section class="grid-2">
+    <article class="card">
+      <h2>Create Course</h2>
+      <form method="post" action="/admin/courses/create" enctype="multipart/form-data" class="form-grid">
+        <label>Course name</label>
+        <input type="text" name="name" required />
+        <label>Description</label>
+        <textarea name="description" rows="3"></textarea>
+        <label>Course Thumbnail (optional)</label>
+        <label class="dropzone" for="course-thumbnail-file-input">
+          <span class="dropzone-title">Drop course thumbnail here or click to choose</span>
+          <span class="dropzone-subtitle">PNG/JPG/WEBP</span>
+          <input type="file" id="course-thumbnail-file-input" name="thumbnailFile" accept="image/png,image/jpeg,image/webp" />
+          <span class="dropzone-file-list" id="course-thumbnail-file-name">No thumbnail selected</span>
+        </label>
+        <button type="submit">Create course</button>
+      </form>
+    </article>
+
+    <article class="card">
+      <h2>Manage Courses</h2>
+      <div class="course-admin-toolbar">
+        <input type="text" id="course-admin-search" placeholder="Search courses" aria-label="Search courses" />
+        <span class="meta-text" id="course-admin-count"></span>
+      </div>
+      <div id="course-admin-list">
+        <% courses.forEach((c) => { %>
+          <section class="course-inline-card" data-course-name="<%= String(c.name || '').toLowerCase() %>">
+            <button type="button" class="course-inline-toggle" aria-expanded="false">
+              <span><strong><%= c.name %></strong></span>
+              <span class="course-inline-toggle-meta">Edit / assign / delete</span>
+            </button>
+            <div class="course-inline-body" style="display:none;">
+              <div class="course-inline-section">
+                <h3>Edit Course</h3>
+                <form method="post" action="/admin/courses/<%= c.id %>/update" enctype="multipart/form-data" class="form-grid course-inline-form course-edit-form">
+                  <label>Course name</label>
+                  <input type="text" name="name" value="<%= c.name %>" required />
+                  <label>Description</label>
+                  <textarea name="description" rows="3"><%= c.description || '' %></textarea>
+
+                  <% if (c.thumbnail_path) { %>
+                    <div class="course-thumb-current-wrap">
+                      <div class="course-thumb-current">
+                        <img src="<%= c.thumbnail_path %>" alt="Current thumbnail for <%= c.name %>" class="thumb" />
+                      </div>
+                      <label class="checkbox-row">
+                        <input type="checkbox" name="removeThumbnail" value="true" />
+                        Remove current thumbnail
+                      </label>
+                    </div>
+                  <% } %>
+
+                  <label>Replace Thumbnail (optional)</label>
+                  <label class="dropzone" for="course-edit-thumbnail-input-<%= c.id %>" data-file-name-target="course-edit-thumbnail-name-<%= c.id %>">
+                    <span class="dropzone-title">Drop thumbnail here or click to choose</span>
+                    <span class="dropzone-subtitle">PNG/JPG/WEBP</span>
+                    <input
+                      type="file"
+                      id="course-edit-thumbnail-input-<%= c.id %>"
+                      name="thumbnailFile"
+                      accept="image/png,image/jpeg,image/webp" />
+                    <span class="dropzone-file-list" id="course-edit-thumbnail-name-<%= c.id %>">No file selected</span>
+                  </label>
+                  <div class="inline-actions">
+                    <button type="submit">Save changes</button>
+                  </div>
+                </form>
+
+                <form method="post" action="/admin/courses/<%= c.id %>/delete" class="course-delete-form js-course-delete" data-course-name="<%= c.name %>">
+                  <button type="submit" class="danger">Delete course</button>
+                </form>
+              </div>
+
+              <div class="course-inline-section">
+                <h3>Add Video to Course</h3>
+                <form method="post" action="/admin/courses/<%= c.id %>/videos/add" class="form-grid course-inline-form">
+                <select name="videoId" required>
+                  <% allVideos.forEach((v) => { %>
+                    <option value="<%= v.id %>"><%= v.title %></option>
+                  <% }) %>
+                </select>
+                <input type="number" name="orderIndex" min="1" value="1" required />
+                <button type="submit">Add / Update</button>
+              </form>
+              </div>
+            </div>
+          </section>
+        <% }) %>
+      </div>
+      <div class="pagination-row course-admin-pagination" id="course-admin-pagination"></div>
+    </article>
+  </section>
+
+  <section class="card">
+    <h2>Course Playlist Items</h2>
+    <% if (!courseItems.length) { %>
+      <p>No playlist items yet.</p>
+    <% } %>
+    <% courseItems.forEach((item) => { %>
+      <div class="playlist-row">
+        <span>Course #<%= item.course_id %> | <strong><%= item.title %></strong> | Order <%= item.order_index %></span>
+        <form method="post" action="/admin/courses/<%= item.course_id %>/videos/<%= item.id %>/remove">
+          <button type="submit" class="danger">Remove</button>
+        </form>
+      </div>
+    <% }) %>
+  </section>
+
+  <script>
+    (function () {
+      var searchInput = document.getElementById('course-admin-search');
+      var list = document.getElementById('course-admin-list');
+      var count = document.getElementById('course-admin-count');
+      var pagination = document.getElementById('course-admin-pagination');
+      function bindDropzone(dropzone) {
+        var input = dropzone.querySelector('input[type="file"]');
+        var fileNameTarget = dropzone.getAttribute('data-file-name-target');
+        var fileNameEl = fileNameTarget ? document.getElementById(fileNameTarget) : null;
+        if (!input || !fileNameEl) {
+          return;
+        }
+
+        function updateName() {
+          var file = (input.files || [])[0];
+          fileNameEl.textContent = file ? file.name : 'No file selected';
+        }
+
+        input.addEventListener('change', updateName);
+
+        ['dragenter', 'dragover'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.add('dragover');
+          });
+        });
+
+        ['dragleave', 'dragend', 'drop'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.remove('dragover');
+          });
+        });
+
+        dropzone.addEventListener('drop', function (event) {
+          var dt = event.dataTransfer;
+          if (!dt || !dt.files || !dt.files.length) {
+            return;
+          }
+          input.files = dt.files;
+          updateName();
+        });
+      }
+
+      Array.prototype.slice.call(document.querySelectorAll('.dropzone[data-file-name-target]')).forEach(bindDropzone);
+
+      Array.prototype.slice.call(document.querySelectorAll('.js-course-delete')).forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+          var courseName = form.getAttribute('data-course-name') || 'this course';
+          if (!window.confirm('Delete "' + courseName + '"? This will also remove its playlist items.')) {
+            event.preventDefault();
+          }
+        });
+      });
+
+      if (!searchInput || !list || !count || !pagination) {
+        return;
+      }
+
+      var pageSize = 5;
+      var currentPage = 1;
+      var cards = Array.prototype.slice.call(list.querySelectorAll('.course-inline-card'));
+
+      function closeOtherCards(currentCard) {
+        cards.forEach(function (card) {
+          if (card === currentCard) {
+            return;
+          }
+          var otherToggle = card.querySelector('.course-inline-toggle');
+          var otherBody = card.querySelector('.course-inline-body');
+          if (otherToggle && otherBody) {
+            otherToggle.setAttribute('aria-expanded', 'false');
+            otherBody.style.display = 'none';
+          }
+        });
+      }
+
+      cards.forEach(function (card) {
+        var toggle = card.querySelector('.course-inline-toggle');
+        var body = card.querySelector('.course-inline-body');
+        if (!toggle || !body) {
+          return;
+        }
+        toggle.addEventListener('click', function () {
+          var isOpen = toggle.getAttribute('aria-expanded') === 'true';
+          closeOtherCards(card);
+          toggle.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+          body.style.display = isOpen ? 'none' : '';
+        });
+      });
+
+      function getFilteredCards() {
+        var query = String(searchInput.value || '').trim().toLowerCase();
+        return cards.filter(function (card) {
+          return !query || card.getAttribute('data-course-name').indexOf(query) !== -1;
+        });
+      }
+
+      function renderCourseCards() {
+        var filtered = getFilteredCards();
+        var totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage > totalPages) {
+          currentPage = totalPages;
+        }
+        var start = (currentPage - 1) * pageSize;
+        var end = start + pageSize;
+
+        cards.forEach(function (card) {
+          card.style.display = 'none';
+          var toggle = card.querySelector('.course-inline-toggle');
+          var body = card.querySelector('.course-inline-body');
+          if (toggle && body) {
+            toggle.setAttribute('aria-expanded', 'false');
+            body.style.display = 'none';
+          }
+        });
+        filtered.slice(start, end).forEach(function (card) {
+          card.style.display = '';
+        });
+
+        count.textContent = filtered.length + ' course(s)';
+
+        if (filtered.length <= pageSize) {
+          pagination.innerHTML = '';
+          return;
+        }
+
+        pagination.innerHTML = '';
+
+        var prev = document.createElement('button');
+        prev.type = 'button';
+        prev.className = 'linkish-btn';
+        prev.textContent = 'Prev';
+        prev.disabled = currentPage === 1;
+        prev.addEventListener('click', function () {
+          if (currentPage > 1) {
+            currentPage -= 1;
+            renderCourseCards();
+          }
+        });
+
+        var next = document.createElement('button');
+        next.type = 'button';
+        next.className = 'linkish-btn';
+        next.textContent = 'Next';
+        next.disabled = currentPage === totalPages;
+        next.addEventListener('click', function () {
+          if (currentPage < totalPages) {
+            currentPage += 1;
+            renderCourseCards();
+          }
+        });
+
+        var status = document.createElement('span');
+        status.className = 'meta-text';
+        status.textContent = 'Page ' + currentPage + ' / ' + totalPages;
+
+        pagination.appendChild(prev);
+        pagination.appendChild(status);
+        pagination.appendChild(next);
+      }
+
+      searchInput.addEventListener('input', function () {
+        currentPage = 1;
+        renderCourseCards();
+      });
+
+      renderCourseCards();
+    })();
+  </script>
+<% } %>
+
+<% if (activeTab === 'monitor') { %>
+  <% if (monitor.diskWarning) { %>
+  <section class="disk-warning-banner">
+    <strong>Disk usage warning:</strong> Server disk is at <%= monitor.diskUsedPercent %>% capacity. Consider freeing space or expanding storage before uploading more media.
+  </section>
+  <% } %>
+  <section class="card">
+    <h2>Storage breakdown</h2>
+    <p class="meta-text">Total media on disk: <strong><%= monitor.totalMediaGb %> GB</strong> (uploads <%= monitor.uploadStorageGb %> · HLS <%= monitor.hlsStorageGb %> · thumbnails <%= monitor.thumbnailsStorageGb %>)</p>
+    <div class="monitor-progress">
+      <div class="monitor-progress-label">
+        <span>Server disk used</span>
+        <span><%= monitor.diskUsedGb %> / <%= monitor.diskTotalGb %> GB (<%= monitor.diskUsedPercent %>%)</span>
+      </div>
+      <div class="monitor-progress-bar">
+        <div class="monitor-progress-fill <%= monitor.diskUsedPercent >= 90 ? 'critical' : (monitor.diskUsedPercent >= 80 ? 'warn' : '') %>" style="width: <%= Math.min(100, monitor.diskUsedPercent) %>%"></div>
+      </div>
+    </div>
+  </section>
+  <section class="monitor-grid">
+    <article class="card monitor-card"><h3>Total Media (GB)</h3><p><%= monitor.totalMediaGb %></p></article>
+    <article class="card monitor-card"><h3>Uploads (GB)</h3><p><%= monitor.uploadStorageGb %></p></article>
+    <article class="card monitor-card"><h3>HLS (GB)</h3><p><%= monitor.hlsStorageGb %></p></article>
+    <article class="card monitor-card"><h3>Disk Free (GB)</h3><p><%= monitor.diskFreeGb %></p></article>
+    <article class="card monitor-card"><h3>Total Users</h3><p><%= monitor.total_users || 0 %></p></article>
+    <article class="card monitor-card"><h3>Total Videos</h3><p><%= monitor.total_videos || 0 %></p></article>
+    <article class="card monitor-card"><h3>Published Videos</h3><p><%= monitor.published_videos || 0 %></p></article>
+    <article class="card monitor-card"><h3>Completions</h3><p><%= monitor.total_completions || 0 %></p></article>
+    <article class="card monitor-card"><h3>Stream Events (1h)</h3><p><%= monitor.stream_events_1h || 0 %></p></article>
+    <article class="card monitor-card"><h3>Tokens Issued (1h)</h3><p><%= monitor.token_issued_1h || 0 %></p></article>
+    <article class="card monitor-card"><h3>CPU Load (1m)</h3><p><%= monitor.cpuLoad %></p></article>
+    <article class="card monitor-card"><h3>App Memory (MB)</h3><p><%= monitor.memoryMb %></p></article>
+  </section>
+
+<% } %>
+<%- include('../partials/foot.ejs') %>

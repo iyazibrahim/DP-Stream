@@ -1,0 +1,19 @@
+<a class="video-item video-item--streaming" href="/videos/<%= v.id %>">
+  <div class="video-thumb-wrap">
+    <div class="video-card-badges">
+      <% if (v.transcoding_active) { %><span class="transcoding-badge">Quality upgrading</span><% } %>
+      <% if (v.completed_at) { %><span class="completed-pill">Completed</span><% } %>
+    </div>
+    <% if (v.thumbnail_path) { %>
+      <img class="thumb" src="<%= v.thumbnail_path %>" alt="Thumbnail for <%= v.title %>" loading="lazy" />
+    <% } else { %>
+      <div class="thumb thumb-fallback">No thumbnail</div>
+    <% } %>
+    <div class="video-card-overlay">
+      <h3><%= v.title %></h3>
+      <% if (v.course_name) { %>
+        <p class="meta-text"><%= v.course_name %><% if (v.course_order) { %> · #<%= v.course_order %><% } %></p>
+      <% } %>
+    </div>
+  </div>
+</a>

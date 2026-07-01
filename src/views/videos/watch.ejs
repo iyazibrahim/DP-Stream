@@ -1,0 +1,278 @@
+<%- include('../partials/head.ejs', { title: video.title, user }) %>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css" />
+<section class="card watch-page">
+  <div class="watch-hero">
+    <% if (video.transcoding_active) { %>
+    <div class="transcoding-notice transcoding-notice--overlay">Higher quality versions are still being prepared.</div>
+    <% } %>
+    <div class="video-wrapper" id="video-wrapper">
+      <div class="watermark"><%= user.email %> · <span id="wm-time"></span></div>
+      <video id="video-player" playsinline class="player"></video>
+    </div>
+  </div>
+  <div class="watch-meta">
+    <h1><%= video.title %></h1>
+    <% if (video.course_name) { %>
+      <div class="course-banner">
+        <strong><%= video.course_name %></strong>
+        <% if (video.course_description) { %><p class="meta-text"><%= video.course_description %></p><% } %>
+        <% if (playlistItems && playlistItems.length) { %>
+          <button type="button" id="toggle-playlist" class="linkish-btn">Show playlist</button>
+        <% } %>
+      </div>
+    <% } %>
+    <div class="video-description-block">
+      <h3>Description</h3>
+      <p><%= video.description || 'No description provided.' %></p>
+      <p id="completed-state" class="meta-text">
+        <% if (video.completed_at) { %>
+          Completed on <%= new Date(video.completed_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %>
+        <% } else { %>
+          Not completed yet
+        <% } %>
+      </p>
+      <p id="progress-state" class="meta-text">Progress autosaves while watching.</p>
+    </div>
+    <% if (playlistItems && playlistItems.length) { %>
+      <div id="playlist-panel" class="playlist-panel playlist-panel--hidden">
+        <h3>Course playlist</h3>
+        <% playlistItems.forEach((item) => { %>
+          <a class="playlist-item <%= item.id === video.id ? 'active' : '' %>" href="/videos/<%= item.id %>">
+            <span>#<%= item.order_index %> <%= item.title %></span>
+            <% if (item.completed_at) { %><span class="completed-pill">Completed</span><% } %>
+          </a>
+        <% }) %>
+      </div>
+    <% } %>
+  </div>
+</section>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.polyfilled.min.js"></script>
+<script>
+(async function () {
+  const videoId = '<%= video.id %>';
+  const video = document.getElementById('video-player');
+  const playbackTokenTtlMs = Number('<%= playbackTokenTtlSeconds %>') * 1000;
+  const progressSaveIntervalMs = Math.max(5000, Number('<%= progressSaveIntervalSeconds %>') * 1000);
+  const initialProgressSeconds = Math.max(0, Number('<%= initialProgressSeconds %>') || 0);
+  const completedStateEl = document.getElementById('completed-state');
+  const progressStateEl = document.getElementById('progress-state');
+  const refreshLeadMs = Math.min(120000, Math.max(60000, Math.floor(playbackTokenTtlMs * 0.1)));
+  let hls = null;
+  let player = null;
+  let currentToken = '';
+  let refreshTimeoutId = null;
+  let refreshInFlight = false;
+  let progressSaveIntervalId = null;
+  let progressSaveInFlight = false;
+  let lastSavedPositionSeconds = initialProgressSeconds;
+  let hasAppliedInitialProgress = false;
+  let lastRecoveryAt = 0;
+  const recoveryCooldownMs = 5000;
+
+  function setProgressState(text) {
+    if (progressStateEl) {
+      progressStateEl.textContent = text;
+    }
+  }
+
+  function updateCompletedState(completedAt) {
+    if (!completedStateEl || !completedAt) {
+      return;
+    }
+    const when = new Date(completedAt);
+    completedStateEl.textContent = 'Completed on ' + when.toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' });
+  }
+
+  function applyInitialProgressIfNeeded() {
+    if (hasAppliedInitialProgress || initialProgressSeconds <= 0) {
+      return;
+    }
+    hasAppliedInitialProgress = true;
+    try {
+      video.currentTime = initialProgressSeconds;
+    } catch (e) {}
+  }
+
+  function buildSource(token) {
+    return '/videos/stream/' + videoId + '/master.m3u8?token=' + encodeURIComponent(token);
+  }
+
+  async function fetchToken() {
+    const res = await fetch('/videos/' + videoId + '/token', {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': window.getCsrfToken() },
+      credentials: 'same-origin'
+    });
+    if (!res.ok) {
+      throw new Error('Failed to get playback token');
+    }
+    return res.json();
+  }
+
+  function scheduleTokenRefresh(expiresAt) {
+    if (refreshTimeoutId) {
+      clearTimeout(refreshTimeoutId);
+    }
+    const delay = Math.max(5000, expiresAt - Date.now() - refreshLeadMs);
+    refreshTimeoutId = setTimeout(function () {
+      refreshPlaybackToken(false).catch(function (err) {
+        console.error('Token refresh failed:', err);
+      });
+    }, delay);
+  }
+
+  async function refreshPlaybackToken(reloadSource) {
+    if (refreshInFlight) {
+      return;
+    }
+    refreshInFlight = true;
+    try {
+      const data = await fetchToken();
+      currentToken = data.token;
+      scheduleTokenRefresh(data.expiresAt);
+      if (reloadSource && hls) {
+        hls.loadSource(buildSource(currentToken));
+      }
+    } finally {
+      refreshInFlight = false;
+    }
+  }
+
+  async function saveProgress(forceComplete) {
+    if (progressSaveInFlight || !video) {
+      return;
+    }
+    const positionSeconds = Math.floor(video.currentTime || 0);
+    const durationSeconds = Math.floor(video.duration || 0);
+    if (positionSeconds <= 0 && !forceComplete) {
+      return;
+    }
+    if (positionSeconds === lastSavedPositionSeconds && !forceComplete) {
+      return;
+    }
+    progressSaveInFlight = true;
+    try {
+      const res = await fetch('/videos/' + videoId + '/progress', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': window.getCsrfToken()
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          positionSeconds: positionSeconds,
+          durationSeconds: durationSeconds,
+          completed: Boolean(forceComplete)
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        lastSavedPositionSeconds = Number(data.positionSeconds || positionSeconds);
+        if (data.completedAt) {
+          updateCompletedState(data.completedAt);
+        }
+        setProgressState('Progress saved');
+      }
+    } catch (err) {
+      console.error('Progress save failed:', err);
+    } finally {
+      progressSaveInFlight = false;
+    }
+  }
+
+  function startProgressSaver() {
+    if (progressSaveIntervalId) {
+      clearInterval(progressSaveIntervalId);
+    }
+    progressSaveIntervalId = setInterval(function () {
+      saveProgress(false);
+    }, progressSaveIntervalMs);
+  }
+
+  async function recoverFromFragError() {
+    const now = Date.now();
+    if (now - lastRecoveryAt < recoveryCooldownMs) {
+      return;
+    }
+    lastRecoveryAt = now;
+    await refreshPlaybackToken(true);
+  }
+
+  async function initPlayer() {
+    const tokenData = await fetchToken();
+    currentToken = tokenData.token;
+    scheduleTokenRefresh(tokenData.expiresAt);
+
+    if (Hls.isSupported()) {
+      hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false
+      });
+      hls.loadSource(buildSource(currentToken));
+      hls.attachMedia(video);
+      hls.on(Hls.Events.ERROR, function (event, data) {
+        if (data.fatal) {
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            recoverFromFragError();
+          } else {
+            hls.destroy();
+          }
+        } else if (data.response && data.response.code === 403) {
+          recoverFromFragError();
+        }
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = buildSource(currentToken);
+    } else {
+      setProgressState('HLS playback is not supported in this browser.');
+      return;
+    }
+
+    player = new Plyr(video, {
+      ratio: '16:9',
+      fullscreen: { enabled: true, fallback: true, iosNative: true }
+    });
+
+    player.on('play', applyInitialProgressIfNeeded);
+    player.on('pause', function () { saveProgress(false); });
+    player.on('ended', function () { saveProgress(true); });
+
+    startProgressSaver();
+    setProgressState('Progress autosaves while watching.');
+  }
+
+  function updateWatermarkTime() {
+    const el = document.getElementById('wm-time');
+    if (el) {
+      el.textContent = new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' });
+    }
+  }
+
+  updateWatermarkTime();
+  setInterval(updateWatermarkTime, 1000);
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') {
+      saveProgress(false);
+    }
+  });
+
+  const playlistToggle = document.getElementById('toggle-playlist');
+  const playlistPanel = document.getElementById('playlist-panel');
+  if (playlistToggle && playlistPanel) {
+    playlistToggle.addEventListener('click', function () {
+      const hidden = playlistPanel.classList.toggle('playlist-panel--hidden');
+      playlistToggle.textContent = hidden ? 'Show playlist' : 'Hide playlist';
+    });
+  }
+
+  try {
+    await initPlayer();
+  } catch (err) {
+    console.error(err);
+    setProgressState('Failed to start playback. Please refresh the page.');
+  }
+})();
+</script>
+<%- include('../partials/foot.ejs') %>
