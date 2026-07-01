@@ -1,8 +1,18 @@
+# Optional override for Intel Quick Sync (NUC / bare-metal with /dev/dri).
+# Only use when the host has VAAPI devices — NOT for Dokploy/cloud VMs without GPU.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ubuntu-vaapi.yml up -d
+#
+# Set in .env: FFMPEG_HWACCEL=vaapi, FFMPEG_VAAPI_DEVICE=/dev/dri/renderD128
+#
+# If renderD128 is missing, list devices: ls -la /dev/dri/
+
 services:
   app:
     devices:
-      - /dev/dri/card1:/dev/dri/card1
       - /dev/dri/renderD128:/dev/dri/renderD128
     group_add:
       - "44"
       - "110"
+    # card1 is not required for FFmpeg VAAPI; omit to avoid deploy failures on hosts
+    # where only renderD128 exists (common on Intel NUC).

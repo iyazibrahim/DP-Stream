@@ -16,5 +16,8 @@ RUN npm install --omit=dev
 
 COPY . .
 
+ENV DB_HOST=db
+ENV DB_PORT=3306
+
 EXPOSE 3000
 CMD ["npm", "start"]

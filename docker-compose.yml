@@ -4,10 +4,10 @@ services:
     container_name: video-portal-db
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: video_portal
-      MYSQL_USER: video_app
-      MYSQL_PASSWORD: video_app_password
-      MYSQL_ROOT_PASSWORD: root_password_change_me
+      MYSQL_DATABASE: ${DB_NAME:-video_portal}
+      MYSQL_USER: ${DB_USER:-video_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-video_app_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password_change_me}
     ports:
       - "3307:3306"
     healthcheck:
@@ -24,23 +24,23 @@ services:
     build: .
     container_name: video-portal-app
     restart: unless-stopped
-    devices:
-      - /dev/dri/card1:/dev/dri/card1
-      - /dev/dri/renderD128:/dev/dri/renderD128
-    group_add:
-      - "44"
-      - "110"
+    # Intel VAAPI (/dev/dri) is optional — only on NUC hosts with iGPU.
+    # Use: docker compose -f docker-compose.yml -f docker-compose.ubuntu-vaapi.yml up -d
     env_file:
       - .env
+    environment:
+      # Inside Docker, MySQL is the `db` service — not 127.0.0.1
+      DB_HOST: db
+      DB_PORT: "3306"
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./media:/app/media
     ports:
-      - "3000:3000"
+      - "${APP_HOST_PORT:-3000}:${PORT:-3000}"
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"const p=process.env.PORT||3000;fetch('http://127.0.0.1:'+p+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 12

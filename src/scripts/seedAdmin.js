@@ -1,6 +1,7 @@
 require('dotenv').config();
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcrypt');
+const { resolveDbHost } = require('../config/database');
 
 async function run() {
   const email = process.argv[2];
@@ -11,7 +12,7 @@ async function run() {
   }
 
   const conn = await mysql.createConnection({
-    host: process.env.DB_HOST,
+    host: resolveDbHost(),
     port: Number(process.env.DB_PORT || 3306),
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,

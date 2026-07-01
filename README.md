@@ -101,15 +101,20 @@ For **HTTPS** production, use `COOKIE_SECURE=true` (or `auto`) with an `https://
 ### Intel Quick Sync (NUC / VAAPI)
 
 ```bash
-# Host: install VAAPI drivers, then verify with vainfo
+# On the NUC host — confirm GPU is visible (expect card0 + renderD128, NOT card1)
+ls -la /dev/dri/
+vainfo
 
 # .env
 FFMPEG_HWACCEL=vaapi
 FFMPEG_VAAPI_DEVICE=/dev/dri/renderD128
+LIBVA_DRIVER_NAME=iHD
 
-# Start with VAAPI override
+# Start with VAAPI override (mounts renderD128 only — no card1)
 docker compose -f docker-compose.yml -f docker-compose.ubuntu-vaapi.yml up --build -d
 ```
+
+> **Why the Dokploy error?** The old compose mounted `/dev/dri/card1`, which many NUCs do not have. Only `renderD128` is required for hardware transcode.
 
 ### Local development (no Docker)
 
@@ -157,9 +162,124 @@ Internet → Nginx Proxy Manager (TLS) → Fastify :3000 → MySQL
 - [ ] Nightly database backup, weekly `media/` backup
 - [ ] Firewall: no public exposure of MySQL or app port
 
-**Dokploy** — use the same `docker-compose.yml`; bind-mount host media e.g. `/opt/video-stream/media` → `./media`.
+**Dokploy on your NUC (with Intel Quick Sync)**
+
+If Dokploy runs **on the NUC itself**, VAAPI works — but do **not** mount `/dev/dri/card1`. Most Intel NUCs only have `card0` and `renderD128`. FFmpeg needs **`renderD128` only**.
+
+### Dokploy domain / 404 fix (ports)
+
+Traefik talks to the **container internal port**, not the host port you map for direct access.
+
+| Setting | Correct value | Wrong (causes 404/502) |
+|---------|---------------|-------------------------|
+| `.env` → `PORT` | `3000` | `3010` unless app really listens on 3010 |
+| Dokploy **container / domain port** | `3000` | `80`, `3010` |
+| Compose `ports` (if host 3000 is busy) | `3010:3000` | `3010:3010` without `PORT=3010` |
+| Traefik `loadbalancer.server.port` label | `3000` or remove labels (let Dokploy set domain) | `80` |
+
+**Recommended `.env` on Dokploy:**
+
+```env
+PORT=3000
+APP_HOST_PORT=3010
+APP_URL=https://stream.iyazbrhm.cloud
+COOKIE_SECURE=auto
+DB_HOST=db
+```
+
+**Compose `app` ports** (only if something else uses host 3000):
+
+```yaml
+ports:
+  - "3010:3000"   # host:container — Traefik still uses 3000 inside the network
+```
+
+**Remove** manual Traefik labels from compose if you already configure the domain in the Dokploy UI — duplicate routers often return **404**.
+
+**Verify after deploy:**
+
+```bash
+docker compose exec app node -e "fetch('http://127.0.0.1:3000/health').then(r=>r.json()).then(console.log)"
+curl -I https://stream.iyazbrhm.cloud/health
+```
+
+On the NUC host, verify GPU:
+
+```bash
+ls -la /dev/dri/
+# Typical: card0  renderD128
+vainfo   # should list H264 profiles
+```
+
+In Dokploy compose, under `app`, add **only**:
+
+```yaml
+devices:
+  - /dev/dri/renderD128:/dev/dri/renderD128
+group_add:
+  - "44"    # video group on Ubuntu — run: getent group video
+  - "110"   # render group on Ubuntu — run: getent group render
+```
+
+In `.env`:
+
+```env
+FFMPEG_HWACCEL=vaapi
+FFMPEG_VAAPI_DEVICE=/dev/dri/renderD128
+LIBVA_DRIVER_NAME=iHD
+ENABLE_1080P=true
+```
+
+If `renderD128` is missing, check `ls /dev/dri/` — some boards use `renderD129`. Update both the compose device line and `FFMPEG_VAAPI_DEVICE` to match.
+
+**Dokploy on a cloud VPS (no GPU)** — omit all `devices:` / `group_add:` and use `FFMPEG_HWACCEL=none`.
 
 **Cloudflare** — admin UI chunks uploads above 90 MB; increase proxy timeouts for large files or use Cloudflare Tunnel.
+
+### MySQL `Access denied for user 'video_app'@'…'`
+
+The app **reaches** MySQL, but the password in `.env` does not match what was stored when the `db_data` volume was first created. MySQL only applies `MYSQL_USER` / `MYSQL_PASSWORD` on **first** volume init — changing Dokploy env later does not update existing users.
+
+**Option A — sync password (keep data)** — SSH to the NUC, in the project directory:
+
+```bash
+sh scripts/sync-mysql-user.sh
+docker compose restart app
+```
+
+Or manually (replace values from your Dokploy `.env`):
+
+```bash
+docker compose exec -T db mysql -uroot -p"YOUR_MYSQL_ROOT_PASSWORD" -e "
+CREATE DATABASE IF NOT EXISTS video_portal;
+CREATE USER IF NOT EXISTS 'video_app'@'%' IDENTIFIED BY 'YOUR_DB_PASSWORD';
+ALTER USER 'video_app'@'%' IDENTIFIED BY 'YOUR_DB_PASSWORD';
+GRANT ALL PRIVILEGES ON video_portal.* TO 'video_app'@'%';
+FLUSH PRIVILEGES;"
+docker compose restart app
+```
+
+If root login fails, `MYSQL_ROOT_PASSWORD` in `.env` also does not match the volume — use Option B.
+
+**Option B — fresh database (no data to keep)**
+
+```bash
+docker compose down
+docker volume ls | grep db_data    # note exact volume name, e.g. myproject_db_data
+docker volume rm <project>_db_data
+docker compose up -d --build
+docker compose exec app npm run db:seed-admin -- admin@email.com Password123
+```
+
+**Ensure Dokploy env matches** — same `DB_PASSWORD` for both `app` and `db` service (compose passes `${DB_PASSWORD}` to MySQL init on new volumes):
+
+```env
+DB_HOST=db
+DB_USER=video_app
+DB_PASSWORD=video_app_password
+DB_NAME=video_portal
+MYSQL_ROOT_PASSWORD=root_password_change_me
+```
 
 ---
 
