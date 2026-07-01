@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "db:seed-admin": "node src/scripts/seedAdmin.js"
+    "db:seed-admin": "node src/scripts/seedAdmin.js",
+    "db:migrate": "node src/scripts/runMigrations.js"
   },
   "dependencies": {
     "@fastify/cookie": "^10.0.1",

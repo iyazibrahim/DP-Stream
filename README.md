@@ -85,7 +85,7 @@ cp .env.example .env   # Windows: copy .env.example .env
 
 # 2. Edit .env — set JWT_SECRET, DB_PASSWORD, and other secrets
 
-# 3. Start stack
+# 3. Start stack (migrations run automatically on app startup)
 docker compose up --build -d
 
 # 4. Seed first admin
@@ -121,7 +121,7 @@ docker compose -f docker-compose.yml -f docker-compose.ubuntu-vaapi.yml up --bui
 ```bash
 cp .env.example .env
 npm install
-# Run all migrations in migrations/ against your MySQL instance
+# Migrations run automatically when the app starts (or manually: npm run db:migrate)
 npm run dev
 npm run db:seed-admin -- admin@company.com StrongPass123!
 ```
@@ -279,6 +279,16 @@ DB_USER=video_app
 DB_PASSWORD=video_app_password
 DB_NAME=video_portal
 MYSQL_ROOT_PASSWORD=root_password_change_me
+```
+
+### Schema / missing column errors (`Unknown column …`)
+
+SQL files in `migrations/` are applied **automatically on every app startup**. The app tracks applied versions in `schema_migrations` and only runs what is missing — safe for existing Dokploy volumes that were created before newer migrations existed.
+
+To apply manually without restarting:
+
+```bash
+docker compose exec app npm run db:migrate
 ```
 
 ---

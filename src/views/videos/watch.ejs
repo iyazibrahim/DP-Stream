@@ -1,4 +1,4 @@
-<%- include('../partials/head.ejs', { title: video.title, user }) %>
+<%- include('../partials/head.ejs', { title: video.title, user, bodyClass: 'page-watch' }) %>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css" />
 <section class="card watch-page">
   <div class="watch-hero">
@@ -231,7 +231,12 @@
 
     player = new Plyr(video, {
       ratio: '16:9',
-      fullscreen: { enabled: true, fallback: true, iosNative: true }
+      fullscreen: {
+        enabled: true,
+        fallback: true,
+        iosNative: false,
+        container: '#video-wrapper'
+      }
     });
 
     player.on('play', applyInitialProgressIfNeeded);

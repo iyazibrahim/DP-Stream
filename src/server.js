@@ -5,6 +5,7 @@ const path = require('path');
 
 const dbPlugin = require('./plugins/db');
 const authPlugin = require('./plugins/auth');
+const migrationService = require('./services/migrationService');
 const settingsService = require('./services/settingsService');
 
 const authRoutes = require('./routes/authRoutes');
@@ -67,6 +68,7 @@ async function buildServer() {
     return reply.status(statusCode).view('error.ejs', { message: error.message || 'Something went wrong' });
   });
 
+  await migrationService.runMigrations(app.log);
   await settingsService.ensureDefaults(app);
   return app;
 }

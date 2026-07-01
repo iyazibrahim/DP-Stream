@@ -20,6 +20,25 @@ services:
       - db_data:/var/lib/mysql
       - ./migrations:/docker-entrypoint-initdb.d
 
+  # Runs once per deploy: aligns video_app password with .env even if db_data was created earlier.
+  db-init:
+    image: mysql:8.4
+    container_name: video-portal-db-init
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password_change_me}
+      DB_USER: ${DB_USER:-video_app}
+      DB_PASSWORD: ${DB_PASSWORD:-video_app_password}
+      DB_NAME: ${DB_NAME:-video_portal}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./docker/mysql/sync-app-user.sh:/sync-app-user.sh:ro
+    entrypoint: ["/bin/bash", "/sync-app-user.sh"]
+
   app:
     build: .
     container_name: video-portal-app
@@ -33,8 +52,8 @@ services:
       DB_HOST: db
       DB_PORT: "3306"
     depends_on:
-      db:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     volumes:
       - ./media:/app/media
     ports:
