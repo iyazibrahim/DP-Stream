@@ -785,6 +785,9 @@ tr:hover td { background: var(--surface-2); }
   border-left: none;
   border-right: none;
   border-top: none;
+  width: 100%;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .video-card-content {
@@ -954,13 +957,20 @@ body.page-watch .watch-page {
   border-radius: var(--radius-lg);
   background: var(--player-bg);
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.watch-hero .transcoding-notice--overlay {
+  border-bottom: 1px solid rgba(217, 119, 6, 0.25);
+  text-align: center;
 }
 
 .watch-hero .video-wrapper {
   border-radius: 0;
   width: min(100%, calc(min(68vh, 630px) * 16 / 9));
   margin-inline: auto;
+  align-self: center;
 }
 
 .watch-meta {
