@@ -992,6 +992,11 @@
         <summary>
           <span><strong>#<%= v.id %> <%= v.title %></strong></span>
           <span>Status: <%= v.status %></span>
+          <% if (v.repair_state === 'source_missing') { %>
+            <span class="transcoding-badge" style="background:var(--danger-soft);color:var(--danger)">Source missing</span>
+          <% } else if (v.repair_state === 'hls_missing') { %>
+            <span class="transcoding-badge">HLS missing</span>
+          <% } %>
           <span>Created: <%= new Date(v.created_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %></span>
         </summary>
         <div class="video-collapsible-body">
@@ -1003,6 +1008,9 @@
             <% } %>
           </div>
           <p class="meta-text">Job: <%= v.job_status || '-' %> <% if (v.job_attempts) { %>(attempts: <%= v.job_attempts %>)<% } %></p>
+          <% if (v.repair_message) { %>
+            <p class="<%= v.repair_state === 'source_missing' ? 'error' : 'meta-text' %>"><%= v.repair_message %></p>
+          <% } %>
           <% if (v.job_error) { %><p class="error"><%= v.job_error %></p><% } %>
           <form method="post" action="/admin/videos/<%= v.id %>/update" enctype="multipart/form-data" class="form-grid">
             <label>Title</label>
@@ -1035,7 +1043,11 @@
           <div class="inline-actions">
             <form method="post" action="/admin/videos/<%= v.id %>/publish"><button type="submit">Publish</button></form>
             <form method="post" action="/admin/videos/<%= v.id %>/unpublish"><button type="submit">Hide</button></form>
-            <form method="post" action="/admin/videos/<%= v.id %>/retry"><button type="submit">Retry transcode</button></form>
+            <% if (v.can_repair) { %>
+              <form method="post" action="/admin/videos/<%= v.id %>/retry"><button type="submit">Repair playback</button></form>
+            <% } else { %>
+              <form method="post" action="/admin/videos/<%= v.id %>/retry"><button type="submit">Retry transcode</button></form>
+            <% } %>
             <form method="post" action="/admin/videos/<%= v.id %>/delete" onsubmit="return confirm('Delete this video and all related media?');"><button type="submit" class="danger">Delete</button></form>
           </div>
         </div>

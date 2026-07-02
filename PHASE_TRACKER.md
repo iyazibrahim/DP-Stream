@@ -106,6 +106,6 @@ Exit criteria:
 - [ ] .env production secrets rotated (DB credentials, JWT_SECRET)
 - [ ] Nightly DB backup enabled
 - [ ] Weekly media backup enabled
-- [ ] Dokploy: bind mount host media path (e.g. `/opt/video-stream/media` → `./media` in compose)
+- [x] Dokploy: bind mount host media path (e.g. `/opt/video-stream/media` → `./media` in compose)
 - [ ] Cloudflare: keep chunked upload for files >90 MB; set proxy timeout for large uploads (or use Tunnel)
 - [ ] Plan 250–500 GB SSD on NUC for ~100 GB source library + HLS renditions (HLS adds ~1.5–3× source size)

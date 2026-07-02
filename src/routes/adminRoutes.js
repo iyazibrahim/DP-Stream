@@ -8,10 +8,11 @@ const { nanoid } = require('nanoid');
 const authService = require('../services/authService');
 const settingsService = require('../services/settingsService');
 const videoService = require('../services/videoService');
+const mediaPathsService = require('../services/mediaPathsService');
+const transcodeJobService = require('../services/transcodeJobService');
 
 const PAGE_SIZE = 25;
 const VIDEO_PAGE_SIZE = 10;
-const activeJobs = new Set();
 const ALLOWED_VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v', '.avi']);
 
 function isStrongPassword(password) {
@@ -39,69 +40,6 @@ function getSafeVideoExtension(fileName, mimeType) {
     return null;
   }
   return ext;
-}
-
-async function runTranscodeJob(fastify, jobId, actorUserId) {
-  if (activeJobs.has(jobId)) {
-    return;
-  }
-
-  activeJobs.add(jobId);
-  let publishedEarly = false;
-  try {
-    const [rows] = await fastify.db.execute('SELECT * FROM transcode_jobs WHERE id = ? LIMIT 1', [jobId]);
-    const job = rows[0];
-    if (!job || job.status === 'done') {
-      return;
-    }
-
-    await fastify.db.execute(
-      'UPDATE transcode_jobs SET status = "processing", attempts = attempts + 1, started_at = NOW(), last_error = NULL WHERE id = ?',
-      [jobId]
-    );
-
-    await fastify.db.execute('UPDATE videos SET status = "processing", updated_at = NOW() WHERE id = ?', [job.video_id]);
-
-    const result = await videoService.transcodeToHls(job.video_id, job.upload_path, job.output_path, {
-      onProfileReady: async ({ masterPath }) => {
-        if (publishedEarly) {
-          return;
-        }
-
-        await fastify.db.execute('DELETE FROM video_files WHERE video_id = ? AND file_type = "hls-master"', [job.video_id]);
-        await fastify.db.execute(
-          'INSERT INTO video_files (video_id, file_type, file_path, profile, size_bytes) VALUES (?, "hls-master", ?, "master", ?)',
-          [job.video_id, masterPath, 0]
-        );
-        await fastify.db.execute('UPDATE videos SET status = "published", published_at = NOW(), updated_at = NOW() WHERE id = ?', [job.video_id]);
-        publishedEarly = true;
-      }
-    });
-
-    await fastify.db.execute('DELETE FROM video_files WHERE video_id = ? AND file_type = "hls-master"', [job.video_id]);
-    await fastify.db.execute(
-      'INSERT INTO video_files (video_id, file_type, file_path, profile, size_bytes) VALUES (?, "hls-master", ?, "master", ?)',
-      [job.video_id, result.masterPath, 0]
-    );
-    await fastify.db.execute('UPDATE videos SET status = "published", published_at = COALESCE(published_at, NOW()), updated_at = NOW() WHERE id = ?', [job.video_id]);
-    await fastify.db.execute('UPDATE transcode_jobs SET status = "done", completed_at = NOW(), updated_at = NOW() WHERE id = ?', [jobId]);
-
-    await authService.logEvent(fastify, {
-      actorUserId,
-      action: 'admin.video_transcode_done',
-      metadata: { videoId: job.video_id, jobId }
-    });
-  } catch (err) {
-    if (!publishedEarly) {
-      await fastify.db.execute('UPDATE videos SET status = "failed", updated_at = NOW() WHERE id = (SELECT video_id FROM transcode_jobs WHERE id = ?)', [jobId]);
-    }
-    await fastify.db.execute(
-      'UPDATE transcode_jobs SET status = "failed", last_error = ?, updated_at = NOW() WHERE id = ?',
-      [String(err.message || err), jobId]
-    );
-  } finally {
-    activeJobs.delete(jobId);
-  }
 }
 
 function toRelativeMediaPath(absPath) {
@@ -187,7 +125,7 @@ async function createVideoAndQueueJob(fastify, params) {
   );
 
   const videoId = res.insertId;
-  const outputDir = path.join(path.resolve(process.cwd(), process.env.HLS_DIR || './media/hls'), String(videoId));
+  const outputDir = mediaPathsService.getHlsOutputDir(videoId);
   const sourceSize = fs.existsSync(params.uploadPath) ? fs.statSync(params.uploadPath).size : 0;
 
   await fastify.db.execute(
@@ -200,7 +138,7 @@ async function createVideoAndQueueJob(fastify, params) {
     [videoId, params.uploadPath, outputDir]
   );
 
-  runTranscodeJob(fastify, jobRes.insertId, params.userId).catch((err) => fastify.log.error(err));
+  transcodeJobService.queueTranscodeJob(fastify, jobRes.insertId, params.userId);
 
   await authService.logEvent(fastify, {
     actorUserId: params.userId,
@@ -277,6 +215,23 @@ async function adminRoutes(fastify) {
        LIMIT ${VIDEO_PAGE_SIZE} OFFSET ${safeVideoOffset}`,
       videoParams
     );
+
+    const [sourceFileRows] = await fastify.db.execute(
+      `SELECT video_id, file_path
+       FROM video_files
+       WHERE file_type = 'upload-source'`
+    );
+    const sourcePathByVideoId = new Map(sourceFileRows.map((row) => [row.video_id, row.file_path]));
+    const videosWithRepair = videos.map((video) => {
+      const sourcePath = sourcePathByVideoId.get(video.id);
+      const repair = mediaPathsService.getVideoRepairState(video.id, sourcePath);
+      return {
+        ...video,
+        repair_state: repair.state,
+        repair_message: repair.message,
+        can_repair: repair.canRepair
+      };
+    });
 
     const [allVideos] = await fastify.db.execute('SELECT id, title FROM videos ORDER BY created_at DESC');
 
@@ -397,7 +352,7 @@ async function adminRoutes(fastify) {
 
     return reply.view('admin/dashboard.ejs', {
       user: request.user,
-      videos,
+      videos: videosWithRepair,
       users,
       pendingUsers,
       anomalyAlerts,
@@ -1035,11 +990,11 @@ async function adminRoutes(fastify) {
       return reply.code(400).send({ error: 'Original upload file is missing. Re-upload is required.' });
     }
 
-    const outputDir = path.join(path.resolve(process.cwd(), process.env.HLS_DIR || './media/hls'), String(videoId));
+    const outputDir = mediaPathsService.getHlsOutputDir(videoId);
     await fastify.db.execute('INSERT INTO transcode_jobs (video_id, upload_path, output_path, status) VALUES (?, ?, ?, "pending")', [videoId, source.file_path, outputDir]);
     const [jobRows] = await fastify.db.execute('SELECT MAX(id) AS id FROM transcode_jobs WHERE video_id = ?', [videoId]);
     const jobId = Number(jobRows[0].id);
-    runTranscodeJob(fastify, jobId, request.user.sub).catch((err) => fastify.log.error(err));
+    transcodeJobService.queueTranscodeJob(fastify, jobId, request.user.sub);
 
     await authService.logEvent(fastify, {
       actorUserId: request.user.sub,

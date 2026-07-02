@@ -142,6 +142,8 @@ Key environment variables (see [`.env.example`](.env.example) for the full list)
 | `FFMPEG_HWACCEL` | `none` or `vaapi` | `none` |
 | `PLAYBACK_TOKEN_TTL_SECONDS` | HLS token lifetime | `1200` |
 | `PLAYBACK_TOKEN_GRACE_SECONDS` | Grace window near expiry | `30` |
+| `TRUST_PROXY` | Trust `X-Forwarded-For` behind Cloudflare Tunnel / reverse proxy | `true` |
+| `MAX_CONCURRENT_TRANSCODES` | Parallel FFmpeg jobs (use `1` on NUC) | `1` |
 
 ---
 
@@ -150,8 +152,8 @@ Key environment variables (see [`.env.example`](.env.example) for the full list)
 Typical production topology:
 
 ```
-Internet → Nginx Proxy Manager (TLS) → Fastify :3000 → MySQL
-                                      ↘ media/ (bind mount)
+Internet → Cloudflare Tunnel / NPM (TLS) → Fastify :3000 → MySQL (db_data volume)
+                                           ↘ media (media_data volume)
 ```
 
 **Checklist**
@@ -159,10 +161,72 @@ Internet → Nginx Proxy Manager (TLS) → Fastify :3000 → MySQL
 - [ ] DNS and TLS certificate
 - [ ] Reverse proxy on ports 80/443 only; restrict SSH
 - [ ] Rotate `JWT_SECRET` and DB credentials
-- [ ] Nightly database backup, weekly `media/` backup
+- [ ] Nightly database backup (`db_data`), weekly `media_data` backup
 - [ ] Firewall: no public exposure of MySQL or app port
+- [ ] Confirm `media_data` Docker volume is attached (not ephemeral `./media` in project dir)
+- [ ] Set `TRUST_PROXY=true` when using Cloudflare Tunnel
 
-**Dokploy on your NUC (with Intel Quick Sync)**
+### Video playback after redeploy (Dokploy)
+
+**Symptom:** Videos show in the admin list but playback returns **404** on `/videos/stream/.../master.m3u8` after a redeploy. Deleting and re-uploading fixes it.
+
+**Root causes:**
+
+1. **Media not persisted** — old compose used `./media` relative to the project checkout. Dokploy may recreate that folder on redeploy while `db_data` survives.
+2. **Interrupted transcodes** — FFmpeg jobs run in-process; container restart leaves `pending`/`processing` jobs unfinished.
+
+**Fixes in this repo:**
+
+- Docker Compose now uses a named volume `media_data` mounted at `/app/media` (survives redeploys).
+- On startup, the app **auto-resumes** interrupted transcode jobs and **repairs** published videos missing HLS when the source upload still exists.
+- Admin video list shows **Source missing** vs **HLS missing** with a **Repair playback** button.
+
+**Verify media after redeploy (SSH to Dokploy host):**
+
+```bash
+docker compose exec app ls -la /app/media/uploads /app/media/hls
+docker compose exec app ls /app/media/hls/<videoId>/master.m3u8
+curl -s http://127.0.0.1:3000/health
+curl -I https://your-domain/health
+```
+
+| Check | Healthy | Problem |
+|-------|---------|---------|
+| `/app/media/hls/<id>/master.m3u8` exists | Playback should work | Transcode incomplete or media volume lost |
+| `/app/media/uploads/` empty but DB has videos | Re-upload or restore backup | Volume not persisted |
+| App logs on boot | `Transcode recovery finished` | Recovery ran |
+
+**One-time migration from old `./media` bind mount:**
+
+If you still have files under the project `media/` folder on the host:
+
+```bash
+docker compose down
+# Copy into the named volume (replace PROJECT with your compose project name)
+docker volume create PROJECT_media_data 2>/dev/null || true
+docker run --rm -v "$(pwd)/media:/from" -v PROJECT_media_data:/to alpine sh -c "cp -a /from/. /to/"
+docker compose up -d --build
+```
+
+**Large NUC libraries (optional):** replace the `media_data` volume with a host path in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - /opt/video-stream/media:/app/media
+```
+
+Create once: `sudo mkdir -p /opt/video-stream/media/{uploads,hls,thumbnails}`
+
+**Never in production:** `docker compose down -v` (deletes both `db_data` and `media_data`).
+
+**Backups:**
+
+- Nightly: `docker compose exec db mysqldump ...` or volume snapshot of `db_data`
+- Weekly: archive `media_data` (`docker run --rm -v PROJECT_media_data:/data -v $(pwd):/backup alpine tar czf /backup/media-backup.tar.gz -C /data .`)
+
+---
+
+### Dokploy on your NUC (with Intel Quick Sync)
 
 If Dokploy runs **on the NUC itself**, VAAPI works — but do **not** mount `/dev/dri/card1`. Most Intel NUCs only have `card0` and `renderD128`. FFmpeg needs **`renderD128` only**.
 
@@ -184,6 +248,7 @@ PORT=3000
 APP_HOST_PORT=3010
 APP_URL=https://stream.iyazbrhm.cloud
 COOKIE_SECURE=auto
+TRUST_PROXY=true
 DB_HOST=db
 ```
 

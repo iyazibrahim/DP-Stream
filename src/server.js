@@ -7,6 +7,7 @@ const dbPlugin = require('./plugins/db');
 const authPlugin = require('./plugins/auth');
 const migrationService = require('./services/migrationService');
 const settingsService = require('./services/settingsService');
+const transcodeRecoveryService = require('./services/transcodeRecoveryService');
 
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
@@ -14,7 +15,8 @@ const videoRoutes = require('./routes/videoRoutes');
 const pageRoutes = require('./routes/pageRoutes');
 
 async function buildServer() {
-  const app = Fastify({ logger: true });
+  const trustProxy = process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production';
+  const app = Fastify({ logger: true, trustProxy });
 
   await app.register(require('@fastify/cookie'));
   await app.register(require('@fastify/formbody'));
@@ -70,6 +72,7 @@ async function buildServer() {
 
   await migrationService.runMigrations(app.log);
   await settingsService.ensureDefaults(app);
+  await transcodeRecoveryService.recoverOnStartup(app);
   return app;
 }
 

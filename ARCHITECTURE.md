@@ -317,7 +317,8 @@ flowchart TB
 
 ### Dokploy / NUC media storage
 
-- Deploy the same Docker Compose stack; bind-mount `./media` to a host path such as `/opt/video-stream/media`.
+- Deploy the same Docker Compose stack; use the named Docker volume `media_data` (mounted at `/app/media`) so uploads and HLS survive redeploys on Dokploy.
+- For very large libraries on a NUC, you may instead bind-mount a host path such as `/opt/video-stream/media:/app/media`.
 - For a ~100 GB source library with multi-rendition HLS (`ENABLE_1080P=true`), plan **250–500 GB** total SSD (HLS adds ~1.5–3× source size; reserve 20–30 GB for OS/Docker/MySQL).
 - Admin monitoring reports uploads, HLS, thumbnails, and server disk % (warns above 80%).
 
