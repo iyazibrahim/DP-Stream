@@ -234,17 +234,30 @@
       fullscreen: {
         enabled: true,
         fallback: true,
-        iosNative: false,
-        container: '#video-wrapper'
+        iosNative: false
       }
     });
 
+    mountWatermarkIntoPlayer();
+
+    player.on('enterfullscreen', mountWatermarkIntoPlayer);
     player.on('play', applyInitialProgressIfNeeded);
     player.on('pause', function () { saveProgress(false); });
     player.on('ended', function () { saveProgress(true); });
 
     startProgressSaver();
     setProgressState('Progress autosaves while watching.');
+  }
+
+  function mountWatermarkIntoPlayer() {
+    if (!player || !player.elements || !player.elements.container) {
+      return;
+    }
+    const watermark = document.querySelector('#video-wrapper .watermark');
+    const plyrRoot = player.elements.container;
+    if (watermark && plyrRoot && watermark.parentElement !== plyrRoot) {
+      plyrRoot.appendChild(watermark);
+    }
   }
 
   function updateWatermarkTime() {
