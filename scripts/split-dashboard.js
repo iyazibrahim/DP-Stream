@@ -26,7 +26,8 @@ for (const tab of tabs) {
     endIdx = monitorEnd;
   }
   const body = src.slice(startIdx + start.length, endIdx).trim();
-  fs.writeFileSync(path.join(dir, `tab-${tab}.ejs`), body);
+  const cleaned = body.replace(/\n<%\s*}\s*%>\s*$/m, '');
+  fs.writeFileSync(path.join(dir, `tab-${tab}.ejs`), cleaned);
 }
 
 const shell = `<%- include('../partials/head.ejs', { title: 'Admin Dashboard', user, loadAdminJs: true }) %>

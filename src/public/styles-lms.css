@@ -38,7 +38,61 @@
 
 .theme-toggle { padding: 0; }
 .theme-toggle--auth { width: 100%; margin-top: 16px; }
-.nav-toggle svg { pointer-events: none; }
+.nav-toggle { display: none; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topbar-actions {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+@media (min-width: 641px) {
+  .topbar-nav {
+    display: flex !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+  .topbar-nav {
+    display: none;
+    flex-direction: column;
+    width: 100%;
+    align-items: stretch;
+    order: 3;
+    margin-left: 0;
+    padding-top: 4px;
+    gap: 4px;
+  }
+
+  .topbar-nav.open {
+    display: flex !important;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .topbar-actions {
+    margin-left: auto;
+  }
+}
 
 .admin-tabs--scroll {
   display: flex;

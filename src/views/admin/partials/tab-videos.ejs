@@ -65,27 +65,31 @@
         dragSrc = null;
       });
 
-      saveBtn.addEventListener('click', async function () {
+      saveBtn.addEventListener('click', function () {
         var ids = Array.from(list.querySelectorAll('li[data-id]')).map(function (el) {
           return Number(el.getAttribute('data-id'));
         });
         saveBtn.disabled = true;
         status.textContent = 'Saving\u2026';
-        try {
-          var res = await fetch('/admin/videos/reorder', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.getCsrfToken() },
-            body: JSON.stringify({ ids: ids })
+        fetch('/admin/videos/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.getCsrfToken() },
+          body: JSON.stringify({ ids: ids })
+        })
+          .then(function (res) { return res.json().then(function (data) { return { res: res, data: data }; }); })
+          .then(function (result) {
+            if (!result.res.ok) {
+              throw new Error((result.data && result.data.error) || 'Failed to save order');
+            }
+            status.textContent = 'Order saved!';
+            setTimeout(function () { status.textContent = ''; }, 2500);
+          })
+          .catch(function (err) {
+            status.textContent = 'Error: ' + (err.message || err);
+          })
+          .finally(function () {
+            saveBtn.disabled = false;
           });
-          var data = await res.json();
-          if (!res.ok) { throw new Error((data && data.error) || 'Failed to save order'); }
-          status.textContent = 'Order saved!';
-          setTimeout(function () { status.textContent = ''; }, 2500);
-        } catch (err) {
-          status.textContent = 'Error: ' + (err.message || err);
-        } finally {
-          saveBtn.disabled = false;
-        }
       });
     })();
   </script>
@@ -153,7 +157,7 @@
     <% } %>
 
     <h3>Premium videos (HLS)</h3>
-    <% videos.forEach((v) => { %>
+    <% videos.forEach(function(v) { %>
       <article class="admin-content-card admin-content-card--mobile-only">
         <div class="admin-content-card__head">
           <% if (v.thumbnail_path) { %><img src="<%= v.thumbnail_path %>" alt="" class="admin-content-card__thumb" /><% } %>
@@ -176,7 +180,7 @@
       </article>
     <% }) %>
 
-    <% videos.forEach((v) => { %>
+    <% videos.forEach(function(v) { %>
       <details class="video-collapsible">
         <summary>
           <span><strong>#<%= v.id %> <%= v.title %></strong></span>
@@ -334,4 +338,3 @@
       thumbInputs.forEach(bindDropzone);
     })();
   </script>
-<% } %>
