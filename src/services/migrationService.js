@@ -50,7 +50,8 @@ const LEGACY_CHECKS = {
   '004_courses_tags_jobs.sql': (conn) => tableExists(conn, 'transcode_jobs'),
   '005_watch_progress_fields.sql': (conn) => columnExists(conn, 'video_progress', 'last_position_seconds'),
   '006_video_display_order.sql': (conn) => columnExists(conn, 'videos', 'display_order'),
-  '007_signup_approval.sql': (conn) => statusEnumHasPending(conn)
+  '007_signup_approval.sql': (conn) => statusEnumHasPending(conn),
+  '008_learning_content.sql': (conn) => tableExists(conn, 'learning_items')
 };
 
 async function ensureMigrationsTable(conn) {

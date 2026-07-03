@@ -1,5 +1,19 @@
-ALTER TABLE courses
-  ADD COLUMN IF NOT EXISTS thumbnail_path VARCHAR(500) NULL;
+-- Idempotent: add courses.thumbnail_path (referenced in app code before this migration)
+SET @has_course_thumbnail := (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'courses'
+    AND COLUMN_NAME = 'thumbnail_path'
+);
+SET @sql_course_thumbnail := IF(
+  @has_course_thumbnail = 0,
+  'ALTER TABLE courses ADD COLUMN thumbnail_path VARCHAR(500) NULL',
+  'SELECT 1'
+);
+PREPARE stmt_course_thumbnail FROM @sql_course_thumbnail;
+EXECUTE stmt_course_thumbnail;
+DEALLOCATE PREPARE stmt_course_thumbnail;
 
 CREATE TABLE IF NOT EXISTS learning_items (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
