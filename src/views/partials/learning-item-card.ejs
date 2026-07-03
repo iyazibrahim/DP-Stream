@@ -1,0 +1,32 @@
+<%
+  const gated = item.access_level === 'authenticated' && !user;
+  const href = gated ? '/login?next=' + encodeURIComponent('/learn/' + item.id) : '/learn/' + item.id;
+  const typeLabels = {
+    premium_video: 'Premium',
+    free_video: 'Video',
+    external_video: 'External',
+    document: 'Document'
+  };
+%>
+<a class="video-item video-item--streaming learning-card <%= gated ? 'learning-card--gated' : '' %>" href="<%= href %>">
+  <div class="video-thumb-wrap">
+    <div class="video-card-badges">
+      <span class="type-badge type-badge--<%= item.item_type %>"><%= typeLabels[item.item_type] || item.item_type %></span>
+      <% if (item.access_level === 'public') { %><span class="access-badge access-badge--public">Public</span><% } else { %><span class="access-badge access-badge--members">Members</span><% } %>
+      <% if (item.transcoding_active) { %><span class="transcoding-badge">Upgrading</span><% } %>
+      <% if (item.completed_at) { %><span class="completed-pill">Done</span><% } %>
+      <% if (gated) { %><span class="access-badge access-badge--lock">Sign in</span><% } %>
+    </div>
+    <% if (item.thumbnail_path) { %>
+      <img class="thumb" src="<%= item.thumbnail_path %>" alt="" loading="lazy" />
+    <% } else { %>
+      <div class="thumb thumb-fallback"><%= typeLabels[item.item_type] || 'Item' %></div>
+    <% } %>
+    <div class="video-card-overlay">
+      <h3><%= item.title %></h3>
+      <% if (item.course_name) { %>
+        <p class="meta-text"><%= item.course_name %><% if (item.course_order) { %> · #<%= item.course_order %><% } %></p>
+      <% } %>
+    </div>
+  </div>
+</a>

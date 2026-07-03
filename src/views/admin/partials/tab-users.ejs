@@ -1,0 +1,145 @@
+<section class="card compact-signup-row">
+    <div>
+      <h3>Public registration</h3>
+      <p class="meta-text">Public signup is currently <strong><%= allowSignup ? 'enabled' : 'disabled' %></strong>. When enabled, new accounts require admin approval before login.</p>
+    </div>
+    <form method="post" action="/admin/settings/signup-toggle">
+      <input type="hidden" name="enabled" value="<%= allowSignup ? 'false' : 'true' %>" />
+      <button type="submit"><%= allowSignup ? 'Disable' : 'Enable' %> signup</button>
+    </form>
+  </section>
+
+  <% if (pendingUsers && pendingUsers.length) { %>
+  <section class="card pending-users-card">
+    <h2>Pending approvals (<%= pendingUsers.length %>)</h2>
+    <table class="admin-table">
+      <thead><tr><th>Email</th><th>Registered</th><th>Actions</th></tr></thead>
+      <tbody>
+      <% pendingUsers.forEach((pu) => { %>
+        <tr>
+          <td><%= pu.email %></td>
+          <td><%= new Date(pu.created_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %></td>
+          <td class="row-actions">
+            <form method="post" action="/admin/users/<%= pu.id %>/approve" class="inline-form"><button type="submit" class="btn-success">Approve</button></form>
+            <form method="post" action="/admin/users/<%= pu.id %>/reject" class="inline-form"><button type="submit" class="btn-danger">Reject</button></form>
+          </td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+  </section>
+  <% } %>
+
+  <section class="grid-2">
+    <article class="card">
+      <h2>Create User</h2>
+      <form method="post" action="/admin/users/create" class="form-grid">
+        <label>Email</label>
+        <input type="email" name="email" required />
+        <label>Temporary Password</label>
+        <input type="text" name="password" minlength="10" required />
+        <p class="meta-text">Use at least 10 characters with uppercase, lowercase, and a number.</p>
+        <label>Role</label>
+        <select name="role">
+          <option value="viewer">Viewer</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button type="submit">Create user</button>
+      </form>
+      <p>Users created here must reset password on first login.</p>
+    </article>
+    <article class="card">
+      <h2>Anomaly Alerts (last 24h)</h2>
+      <% if (!anomalyAlerts.length) { %>
+        <p>No high-risk login anomalies detected.</p>
+      <% } %>
+      <% anomalyAlerts.forEach((a) => { %>
+        <div class="alert-row">
+          <strong><%= a.email %></strong>
+          <span class="meta-text">Logged in from <%= a.ip_count %> IPs, last seen: <%= new Date(a.last_seen).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %></span>
+        </div>
+      <% }) %>
+    </article>
+  </section>
+
+  <section class="card">
+    <h2>Users</h2>
+    <form method="get" action="/admin" class="user-filter-row">
+      <input type="hidden" name="tab" value="users" />
+      <input type="text" name="userQuery" value="<%= userQuery || '' %>" placeholder="Search by email" />
+      <button type="submit">Search</button>
+    </form>
+    <table class="admin-table">
+      <thead><tr><th>ID</th><th>Email</th><th>Role</th><th>Status</th><th>Progress</th><th>Lockout</th><th>Action</th></tr></thead>
+      <tbody>
+      <% users.forEach((u) => { %>
+        <tr>
+          <td><%= u.id %></td>
+          <td><%= u.email %></td>
+          <td><%= u.role %></td>
+          <td><%= u.status %></td>
+          <td><%= u.completed_count || 0 %> completed</td>
+          <td>
+            <% if (u.locked_until) { %>
+              Locked until <%= new Date(u.locked_until).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %>
+            <% } else { %>
+              Not locked
+            <% } %>
+            <div>Attempts: <%= u.failed_login_attempts || 0 %></div>
+          </td>
+          <td>
+            <% if (u.status === 'pending') { %>
+              <form method="post" action="/admin/users/<%= u.id %>/approve" class="inline-form"><button type="submit" class="btn-success">Approve</button></form>
+              <form method="post" action="/admin/users/<%= u.id %>/reject" class="inline-form"><button type="submit" class="btn-danger">Reject</button></form>
+            <% } else if (u.status === 'active') { %>
+              <form method="post" action="/admin/users/<%= u.id %>/disable" class="inline-form"><button type="submit">Disable</button></form>
+            <% } else { %>
+              <form method="post" action="/admin/users/<%= u.id %>/enable" class="inline-form"><button type="submit">Enable</button></form>
+            <% } %>
+            <% if (u.status !== 'pending') { %>
+            <form method="post" action="/admin/users/<%= u.id %>/force-logout" class="inline-form"><button type="submit">Force logout</button></form>
+            <button
+              type="button"
+              class="open-reset-modal"
+              data-user-id="<%= u.id %>"
+              data-user-email="<%= u.email %>">
+              Reset password
+            </button>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+    <div class="pagination-row">
+      <% if (userPage > 1) { %>
+        <a class="tab-link" href="/admin?tab=users&userPage=<%= userPage - 1 %>&userQuery=<%= encodeURIComponent(userQuery || '') %>">Prev</a>
+      <% } %>
+      <span>Page <%= userPage %> / <%= totalUserPages %></span>
+      <% if (userPage < totalUserPages) { %>
+        <a class="tab-link" href="/admin?tab=users&userPage=<%= userPage + 1 %>&userQuery=<%= encodeURIComponent(userQuery || '') %>">Next</a>
+      <% } %>
+    </div>
+  </section>
+
+  <div id="reset-password-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-card">
+      <h3>Reset User Password</h3>
+      <p id="reset-user-email" class="meta-text"></p>
+      <form id="reset-password-form" method="post" class="form-grid">
+        <label>New Temporary Password</label>
+        <input type="password" id="reset-password-input" name="password" minlength="10" required />
+        <p class="meta-text">Use at least 10 characters with uppercase, lowercase, and a number.</p>
+        <label>Reconfirm Temporary Password</label>
+        <input type="password" id="reset-password-confirm" minlength="10" required />
+        <p id="reset-password-error" class="error" style="display:none;">Passwords do not match.</p>
+        <div class="modal-actions">
+          <button type="submit">Save and force reset</button>
+          <button type="button" id="close-reset-modal" class="linkish-btn">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- reset password modal handled by admin.js -->
+<% } %>

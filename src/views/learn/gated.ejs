@@ -1,0 +1,13 @@
+<%- include('../partials/head.ejs', { title: 'Sign in required', user }) %>
+<section class="card gated-card">
+  <div class="gated-icon" aria-hidden="true">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 118 0v3"/></svg>
+  </div>
+  <h1><%= item.title %></h1>
+  <p class="meta-text">This content is available to signed-in members only.</p>
+  <div class="inline-actions">
+    <a class="tab-link active" href="/login?next=<%= encodeURIComponent('/learn/' + item.id) %>">Sign in</a>
+    <a class="tab-link" href="/learn">Browse public content</a>
+  </div>
+</section>
+<%- include('../partials/foot.ejs') %>

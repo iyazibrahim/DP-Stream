@@ -1,0 +1,34 @@
+<% if (monitor.diskWarning) { %>
+  <section class="disk-warning-banner">
+    <strong>Disk usage warning:</strong> Server disk is at <%= monitor.diskUsedPercent %>% capacity. Consider freeing space or expanding storage before uploading more media.
+  </section>
+  <% } %>
+  <section class="card">
+    <h2>Storage breakdown</h2>
+    <p class="meta-text">Total media on disk: <strong><%= monitor.totalMediaGb %> GB</strong> (uploads <%= monitor.uploadStorageGb %> · HLS <%= monitor.hlsStorageGb %> · thumbnails <%= monitor.thumbnailsStorageGb %>)</p>
+    <div class="monitor-progress">
+      <div class="monitor-progress-label">
+        <span>Server disk used</span>
+        <span><%= monitor.diskUsedGb %> / <%= monitor.diskTotalGb %> GB (<%= monitor.diskUsedPercent %>%)</span>
+      </div>
+      <div class="monitor-progress-bar">
+        <div class="monitor-progress-fill <%= monitor.diskUsedPercent >= 90 ? 'critical' : (monitor.diskUsedPercent >= 80 ? 'warn' : '') %>" style="width: <%= Math.min(100, monitor.diskUsedPercent) %>%"></div>
+      </div>
+    </div>
+  </section>
+  <section class="monitor-grid">
+    <article class="card monitor-card"><h3>Total Media (GB)</h3><p><%= monitor.totalMediaGb %></p></article>
+    <article class="card monitor-card"><h3>Uploads (GB)</h3><p><%= monitor.uploadStorageGb %></p></article>
+    <article class="card monitor-card"><h3>HLS (GB)</h3><p><%= monitor.hlsStorageGb %></p></article>
+    <article class="card monitor-card"><h3>Disk Free (GB)</h3><p><%= monitor.diskFreeGb %></p></article>
+    <article class="card monitor-card"><h3>Total Users</h3><p><%= monitor.total_users || 0 %></p></article>
+    <article class="card monitor-card"><h3>Total Videos</h3><p><%= monitor.total_videos || 0 %></p></article>
+    <article class="card monitor-card"><h3>Published Videos</h3><p><%= monitor.published_videos || 0 %></p></article>
+    <article class="card monitor-card"><h3>Completions</h3><p><%= monitor.total_completions || 0 %></p></article>
+    <article class="card monitor-card"><h3>Stream Events (1h)</h3><p><%= monitor.stream_events_1h || 0 %></p></article>
+    <article class="card monitor-card"><h3>Tokens Issued (1h)</h3><p><%= monitor.token_issued_1h || 0 %></p></article>
+    <article class="card monitor-card"><h3>CPU Load (1m)</h3><p><%= monitor.cpuLoad %></p></article>
+    <article class="card monitor-card"><h3>App Memory (MB)</h3><p><%= monitor.memoryMb %></p></article>
+  </section>
+
+<% } %>

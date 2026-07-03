@@ -1,0 +1,283 @@
+<section class="grid-2">
+    <article class="card">
+      <h2>Create Course</h2>
+      <form method="post" action="/admin/courses/create" enctype="multipart/form-data" class="form-grid">
+        <label>Course name</label>
+        <input type="text" name="name" required />
+        <label>Description</label>
+        <textarea name="description" rows="3"></textarea>
+        <label>Course Thumbnail (optional)</label>
+        <label class="dropzone" for="course-thumbnail-file-input">
+          <span class="dropzone-title">Drop course thumbnail here or click to choose</span>
+          <span class="dropzone-subtitle">PNG/JPG/WEBP</span>
+          <input type="file" id="course-thumbnail-file-input" name="thumbnailFile" accept="image/png,image/jpeg,image/webp" />
+          <span class="dropzone-file-list" id="course-thumbnail-file-name">No thumbnail selected</span>
+        </label>
+        <button type="submit">Create course</button>
+      </form>
+    </article>
+
+    <article class="card">
+      <h2>Manage Courses</h2>
+      <div class="course-admin-toolbar">
+        <input type="text" id="course-admin-search" placeholder="Search courses" aria-label="Search courses" />
+        <span class="meta-text" id="course-admin-count"></span>
+      </div>
+      <div id="course-admin-list">
+        <% courses.forEach((c) => { %>
+          <section class="course-inline-card" data-course-name="<%= String(c.name || '').toLowerCase() %>">
+            <button type="button" class="course-inline-toggle" aria-expanded="false">
+              <span><strong><%= c.name %></strong></span>
+              <span class="course-inline-toggle-meta">Edit / assign / delete</span>
+            </button>
+            <div class="course-inline-body" style="display:none;">
+              <div class="course-inline-section">
+                <h3>Edit Course</h3>
+                <form method="post" action="/admin/courses/<%= c.id %>/update" enctype="multipart/form-data" class="form-grid course-inline-form course-edit-form">
+                  <label>Course name</label>
+                  <input type="text" name="name" value="<%= c.name %>" required />
+                  <label>Description</label>
+                  <textarea name="description" rows="3"><%= c.description || '' %></textarea>
+
+                  <% if (c.thumbnail_path) { %>
+                    <div class="course-thumb-current-wrap">
+                      <div class="course-thumb-current">
+                        <img src="<%= c.thumbnail_path %>" alt="Current thumbnail for <%= c.name %>" class="thumb" />
+                      </div>
+                      <label class="checkbox-row">
+                        <input type="checkbox" name="removeThumbnail" value="true" />
+                        Remove current thumbnail
+                      </label>
+                    </div>
+                  <% } %>
+
+                  <label>Replace Thumbnail (optional)</label>
+                  <label class="dropzone" for="course-edit-thumbnail-input-<%= c.id %>" data-file-name-target="course-edit-thumbnail-name-<%= c.id %>">
+                    <span class="dropzone-title">Drop thumbnail here or click to choose</span>
+                    <span class="dropzone-subtitle">PNG/JPG/WEBP</span>
+                    <input
+                      type="file"
+                      id="course-edit-thumbnail-input-<%= c.id %>"
+                      name="thumbnailFile"
+                      accept="image/png,image/jpeg,image/webp" />
+                    <span class="dropzone-file-list" id="course-edit-thumbnail-name-<%= c.id %>">No file selected</span>
+                  </label>
+                  <div class="inline-actions">
+                    <button type="submit">Save changes</button>
+                  </div>
+                </form>
+
+                <form method="post" action="/admin/courses/<%= c.id %>/delete" class="course-delete-form js-course-delete" data-course-name="<%= c.name %>">
+                  <button type="submit" class="danger">Delete course</button>
+                </form>
+              </div>
+
+              <div class="course-inline-section">
+                <h3>Add content to course</h3>
+                <form method="post" action="/admin/courses/<%= c.id %>/videos/add" class="form-grid course-inline-form">
+                <select name="learningItemId" required>
+                  <% (allLearningItems || allVideos).forEach((v) => { %>
+                    <option value="<%= v.id %>">[<%= v.item_type || 'premium_video' %>] <%= v.title %></option>
+                  <% }) %>
+                </select>
+                <input type="number" name="orderIndex" min="1" value="1" required />
+                <button type="submit">Add / Update</button>
+              </form>
+              </div>
+            </div>
+          </section>
+        <% }) %>
+      </div>
+      <div class="pagination-row course-admin-pagination" id="course-admin-pagination"></div>
+    </article>
+  </section>
+
+  <section class="card">
+    <h2>Course Playlist Items</h2>
+    <% if (!courseItems.length) { %>
+      <p>No playlist items yet.</p>
+    <% } %>
+    <% courseItems.forEach((item) => { %>
+      <div class="playlist-row">
+        <span>Course #<%= item.course_id %> | <span class="type-badge type-badge--<%= item.item_type %>"><%= item.item_type %></span> <strong><%= item.title %></strong> | Order <%= item.order_index %></span>
+        <form method="post" action="/admin/courses/<%= item.course_id %>/videos/<%= item.id %>/remove">
+          <button type="submit" class="danger">Remove</button>
+        </form>
+      </div>
+    <% }) %>
+  </section>
+
+  <script>
+    (function () {
+      var searchInput = document.getElementById('course-admin-search');
+      var list = document.getElementById('course-admin-list');
+      var count = document.getElementById('course-admin-count');
+      var pagination = document.getElementById('course-admin-pagination');
+      function bindDropzone(dropzone) {
+        var input = dropzone.querySelector('input[type="file"]');
+        var fileNameTarget = dropzone.getAttribute('data-file-name-target');
+        var fileNameEl = fileNameTarget ? document.getElementById(fileNameTarget) : null;
+        if (!input || !fileNameEl) {
+          return;
+        }
+
+        function updateName() {
+          var file = (input.files || [])[0];
+          fileNameEl.textContent = file ? file.name : 'No file selected';
+        }
+
+        input.addEventListener('change', updateName);
+
+        ['dragenter', 'dragover'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.add('dragover');
+          });
+        });
+
+        ['dragleave', 'dragend', 'drop'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.remove('dragover');
+          });
+        });
+
+        dropzone.addEventListener('drop', function (event) {
+          var dt = event.dataTransfer;
+          if (!dt || !dt.files || !dt.files.length) {
+            return;
+          }
+          input.files = dt.files;
+          updateName();
+        });
+      }
+
+      Array.prototype.slice.call(document.querySelectorAll('.dropzone[data-file-name-target]')).forEach(bindDropzone);
+
+      Array.prototype.slice.call(document.querySelectorAll('.js-course-delete')).forEach(function (form) {
+        form.addEventListener('submit', function (event) {
+          var courseName = form.getAttribute('data-course-name') || 'this course';
+          if (!window.confirm('Delete "' + courseName + '"? This will also remove its playlist items.')) {
+            event.preventDefault();
+          }
+        });
+      });
+
+      if (!searchInput || !list || !count || !pagination) {
+        return;
+      }
+
+      var pageSize = 5;
+      var currentPage = 1;
+      var cards = Array.prototype.slice.call(list.querySelectorAll('.course-inline-card'));
+
+      function closeOtherCards(currentCard) {
+        cards.forEach(function (card) {
+          if (card === currentCard) {
+            return;
+          }
+          var otherToggle = card.querySelector('.course-inline-toggle');
+          var otherBody = card.querySelector('.course-inline-body');
+          if (otherToggle && otherBody) {
+            otherToggle.setAttribute('aria-expanded', 'false');
+            otherBody.style.display = 'none';
+          }
+        });
+      }
+
+      cards.forEach(function (card) {
+        var toggle = card.querySelector('.course-inline-toggle');
+        var body = card.querySelector('.course-inline-body');
+        if (!toggle || !body) {
+          return;
+        }
+        toggle.addEventListener('click', function () {
+          var isOpen = toggle.getAttribute('aria-expanded') === 'true';
+          closeOtherCards(card);
+          toggle.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+          body.style.display = isOpen ? 'none' : '';
+        });
+      });
+
+      function getFilteredCards() {
+        var query = String(searchInput.value || '').trim().toLowerCase();
+        return cards.filter(function (card) {
+          return !query || card.getAttribute('data-course-name').indexOf(query) !== -1;
+        });
+      }
+
+      function renderCourseCards() {
+        var filtered = getFilteredCards();
+        var totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        if (currentPage > totalPages) {
+          currentPage = totalPages;
+        }
+        var start = (currentPage - 1) * pageSize;
+        var end = start + pageSize;
+
+        cards.forEach(function (card) {
+          card.style.display = 'none';
+          var toggle = card.querySelector('.course-inline-toggle');
+          var body = card.querySelector('.course-inline-body');
+          if (toggle && body) {
+            toggle.setAttribute('aria-expanded', 'false');
+            body.style.display = 'none';
+          }
+        });
+        filtered.slice(start, end).forEach(function (card) {
+          card.style.display = '';
+        });
+
+        count.textContent = filtered.length + ' course(s)';
+
+        if (filtered.length <= pageSize) {
+          pagination.innerHTML = '';
+          return;
+        }
+
+        pagination.innerHTML = '';
+
+        var prev = document.createElement('button');
+        prev.type = 'button';
+        prev.className = 'linkish-btn';
+        prev.textContent = 'Prev';
+        prev.disabled = currentPage === 1;
+        prev.addEventListener('click', function () {
+          if (currentPage > 1) {
+            currentPage -= 1;
+            renderCourseCards();
+          }
+        });
+
+        var next = document.createElement('button');
+        next.type = 'button';
+        next.className = 'linkish-btn';
+        next.textContent = 'Next';
+        next.disabled = currentPage === totalPages;
+        next.addEventListener('click', function () {
+          if (currentPage < totalPages) {
+            currentPage += 1;
+            renderCourseCards();
+          }
+        });
+
+        var status = document.createElement('span');
+        status.className = 'meta-text';
+        status.textContent = 'Page ' + currentPage + ' / ' + totalPages;
+
+        pagination.appendChild(prev);
+        pagination.appendChild(status);
+        pagination.appendChild(next);
+      }
+
+      searchInput.addEventListener('input', function () {
+        currentPage = 1;
+        renderCourseCards();
+      });
+
+      renderCourseCards();
+    })();
+  </script>
+<% } %>

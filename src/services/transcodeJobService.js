@@ -1,5 +1,6 @@
 const authService = require('./authService');
 const videoService = require('./videoService');
+const learningItemService = require('./learningItemService');
 
 const activeJobs = new Set();
 const pendingRunQueue = [];
@@ -74,6 +75,7 @@ async function runTranscodeJob(fastify, jobId, actorUserId) {
           [job.video_id, masterPath, 0]
         );
         await fastify.db.execute('UPDATE videos SET status = "published", published_at = NOW(), updated_at = NOW() WHERE id = ?', [job.video_id]);
+        await learningItemService.syncVideoStatusToLearningItem(fastify, job.video_id, 'published', new Date());
         publishedEarly = true;
       }
     });
@@ -84,6 +86,7 @@ async function runTranscodeJob(fastify, jobId, actorUserId) {
       [job.video_id, result.masterPath, 0]
     );
     await fastify.db.execute('UPDATE videos SET status = "published", published_at = COALESCE(published_at, NOW()), updated_at = NOW() WHERE id = ?', [job.video_id]);
+    await learningItemService.syncVideoStatusToLearningItem(fastify, job.video_id, 'published', new Date());
     await fastify.db.execute('UPDATE transcode_jobs SET status = "done", completed_at = NOW(), updated_at = NOW() WHERE id = ?', [jobId]);
 
     await authService.logEvent(fastify, {
@@ -94,6 +97,10 @@ async function runTranscodeJob(fastify, jobId, actorUserId) {
   } catch (err) {
     if (!publishedEarly) {
       await fastify.db.execute('UPDATE videos SET status = "failed", updated_at = NOW() WHERE id = (SELECT video_id FROM transcode_jobs WHERE id = ?)', [jobId]);
+      const [failRows] = await fastify.db.execute('SELECT video_id FROM transcode_jobs WHERE id = ? LIMIT 1', [jobId]);
+      if (failRows[0]) {
+        await learningItemService.syncVideoStatusToLearningItem(fastify, failRows[0].video_id, 'failed', null);
+      }
     }
     await fastify.db.execute(
       'UPDATE transcode_jobs SET status = "failed", last_error = ?, updated_at = NOW() WHERE id = ?',

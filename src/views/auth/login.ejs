@@ -28,7 +28,10 @@
 
     <button type="submit" class="login-submit">Sign in</button>
   </form>
-  <button type="button" class="theme-toggle theme-toggle--auth" data-theme-toggle aria-label="Switch theme">Light</button>
+  <button type="button" class="icon-btn theme-toggle theme-toggle--auth" data-theme-toggle aria-label="Switch theme" aria-pressed="false">
+    <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+    <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" hidden><circle cx="12" cy="12" r="4"/></svg>
+  </button>
 </section>
 <script>
 (function () {
@@ -43,11 +46,6 @@
     toggle.textContent = showing ? 'Show' : 'Hide';
     toggle.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
   });
-  var themeBtn = document.querySelector('.theme-toggle--auth');
-  if (themeBtn) {
-    var current = document.documentElement.getAttribute('data-theme') || 'dark';
-    themeBtn.textContent = current === 'light' ? 'Dark' : 'Light';
-  }
 })();
 </script>
 <%- include('../partials/foot.ejs') %>

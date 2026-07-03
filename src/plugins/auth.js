@@ -119,6 +119,30 @@ module.exports = fp(async function authPlugin(fastify) {
     }
   });
 
+  fastify.decorate('optionalAuth', async function optionalAuth(request) {
+    request.user = null;
+    try {
+      const token = request.cookies.auth_token;
+      if (!token) {
+        return;
+      }
+      const payload = await fastify.jwt.verify(token);
+      const userRow = await hydrateUserFromSession(payload);
+      if (!userRow || userRow.status !== 'active') {
+        return;
+      }
+      request.user = {
+        sub: userRow.user_id,
+        email: userRow.email,
+        role: userRow.role,
+        pwdResetRequired: Boolean(userRow.must_reset_password),
+        sid: payload.sid
+      };
+    } catch (err) {
+      fastify.log.warn({ err }, 'Auth cookie verification failed in optionalAuth');
+    }
+  });
+
   fastify.decorate('requireAdmin', async function requireAdmin(request, reply) {
     await fastify.requireAuth(request, reply);
     if (reply.sent) {

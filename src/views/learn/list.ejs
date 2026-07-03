@@ -1,0 +1,144 @@
+<%- include('../partials/head.ejs', { title: 'Learning Library', user }) %>
+
+<section class="card library-hero">
+  <div class="section-header-inline">
+    <h1>Learning library</h1>
+    <% if (!user) { %>
+      <a class="tab-link" href="/login">Sign in</a>
+    <% } %>
+  </div>
+
+  <% if (passwordChanged) { %>
+    <p class="success">Password changed successfully.</p>
+  <% } %>
+
+  <div class="videos-toolbar videos-toolbar--sticky">
+    <form method="get" action="/learn" class="video-search-row video-search-row-compact" id="videos-search-form" autocomplete="off">
+      <% if (selectedCourseId) { %><input type="hidden" name="courseId" value="<%= selectedCourseId %>" /><% } %>
+      <% if (filterType && filterType !== 'all') { %><input type="hidden" name="type" value="<%= filterType %>" /><% } %>
+      <div class="video-search-wrap">
+        <input type="text" name="q" value="<%= searchQuery || '' %>" placeholder="Search content or courses" aria-label="Search" id="videos-search-input" />
+        <div id="videos-search-suggestions" class="search-suggestions" aria-live="polite"></div>
+      </div>
+      <button type="submit" class="icon-btn icon-btn--primary" aria-label="Search">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>
+      </button>
+      <% if (searchQuery || selectedCourseId) { %>
+        <a class="tab-link" href="/learn">Clear</a>
+      <% } %>
+    </form>
+  </div>
+
+  <% if (!selectedCourseId) { %>
+    <div class="segmented-control" id="library-segmented" role="tablist" aria-label="Filter content">
+      <a class="segmented-btn <%= filterType === 'all' ? 'active' : '' %>" href="/learn<%= searchQuery ? ('?q=' + encodeURIComponent(searchQuery)) : '' %>" data-filter="all" aria-selected="<%= filterType === 'all' ? 'true' : 'false' %>">All</a>
+      <a class="segmented-btn <%= filterType === 'videos' ? 'active' : '' %>" href="/learn?type=videos<%= searchQuery ? ('&q=' + encodeURIComponent(searchQuery)) : '' %>" data-filter="videos" aria-selected="<%= filterType === 'videos' ? 'true' : 'false' %>">Videos</a>
+      <a class="segmented-btn <%= filterType === 'documents' ? 'active' : '' %>" href="/learn?type=documents<%= searchQuery ? ('&q=' + encodeURIComponent(searchQuery)) : '' %>" data-filter="documents" aria-selected="<%= filterType === 'documents' ? 'true' : 'false' %>">Documents</a>
+      <a class="segmented-btn <%= filterType === 'courses' ? 'active' : '' %>" href="/learn?type=courses<%= searchQuery ? ('&q=' + encodeURIComponent(searchQuery)) : '' %>" data-filter="courses" aria-selected="<%= filterType === 'courses' ? 'true' : 'false' %>">Courses</a>
+    </div>
+  <% } %>
+</section>
+
+<% if (selectedCourse) { %>
+  <section class="card" data-library-section="items">
+    <div class="course-focus-banner">
+      <div>
+        <p class="meta-text">Selected course</p>
+        <h2><%= selectedCourse.name %></h2>
+        <p><%= selectedCourse.description || 'No course description yet.' %></p>
+        <p class="meta-text"><%= selectedCourse.video_count || 0 %> video(s) · <%= selectedCourse.document_count || 0 %> document(s)</p>
+      </div>
+      <a class="tab-link" href="/learn<%= searchQuery ? ('?q=' + encodeURIComponent(searchQuery)) : '' %>">Back to all</a>
+    </div>
+  </section>
+<% } %>
+
+<section class="card" data-library-section="items" <%= filterType === 'courses' ? 'hidden' : '' %>>
+  <div class="section-header-inline">
+    <h2><%= selectedCourse ? 'Course content' : 'Available content' %></h2>
+    <span class="meta-text"><%= items.length %> item(s)</span>
+  </div>
+  <% if (!items.length) { %>
+    <p>No published content matches your filter.</p>
+  <% } %>
+  <%
+    const PREVIEW = 6;
+    const isFiltered = !!(searchQuery || selectedCourseId || (filterType && filterType !== 'all'));
+    const preview = isFiltered ? items : items.slice(0, PREVIEW);
+    const rest = isFiltered ? [] : items.slice(PREVIEW);
+  %>
+  <div class="video-list learning-grid" id="videos-list-preview">
+    <% preview.forEach((item) => { %>
+      <%- include('../partials/learning-item-card.ejs', { item, user }) %>
+    <% }) %>
+  </div>
+  <% if (rest.length > 0) { %>
+    <div class="video-list learning-grid video-list--hidden" id="videos-list-rest">
+      <% rest.forEach((item) => { %>
+        <%- include('../partials/learning-item-card.ejs', { item, user }) %>
+      <% }) %>
+    </div>
+    <div id="view-all-videos-row" class="view-all-row">
+      <button type="button" id="view-all-videos-btn" class="tab-link">View all <%= items.length %> items</button>
+    </div>
+  <% } %>
+</section>
+
+<section class="card" data-library-section="courses" <%= (selectedCourseId || (filterType && filterType !== 'all' && filterType !== 'courses')) ? 'hidden' : '' %>>
+  <div class="section-header-inline">
+    <h2>Available courses</h2>
+    <span class="meta-text"><%= courses.length %> course(s)</span>
+  </div>
+  <% if (!courses.length) { %><p>No courses available yet.</p><% } %>
+  <div class="course-grid">
+    <% courses.forEach((c) => { %>
+      <a class="course-item" href="/learn?courseId=<%= c.id %><%= searchQuery ? ('&q=' + encodeURIComponent(searchQuery)) : '' %>">
+        <div class="video-thumb-wrap">
+          <% if (c.thumbnail_path) { %>
+            <img class="thumb" src="<%= c.thumbnail_path %>" alt="" loading="lazy" />
+          <% } else { %>
+            <div class="thumb thumb-fallback">Course</div>
+          <% } %>
+        </div>
+        <div class="video-card-content">
+          <h3><%= c.name %></h3>
+          <p class="meta-text"><%= c.video_count || 0 %> video(s) · <%= c.document_count || 0 %> doc(s)</p>
+          <p><%= c.description || 'No description yet.' %></p>
+        </div>
+      </a>
+    <% }) %>
+  </div>
+</section>
+
+<%- include('../partials/foot.ejs') %>
+
+<script>
+(function () {
+  var input = document.getElementById('videos-search-input');
+  var box = document.getElementById('videos-search-suggestions');
+  if (!input || !box) { return; }
+  var suggestions = [
+    <% items.forEach((item, i) => { %>
+      { label: <%- JSON.stringify((item.title || '') + ' · ' + (item.item_type || '')) %>, href: <%- JSON.stringify('/learn/' + item.id) %> }<%= (i < items.length - 1 || courses.length) ? ',' : '' %>
+    <% }) %>
+    <% courses.forEach((c, i) => { %>
+      { label: <%- JSON.stringify('Course: ' + (c.name || '')) %>, href: <%- JSON.stringify('/learn?courseId=' + c.id) %> }<%= i < courses.length - 1 ? ',' : '' %>
+    <% }) %>
+  ];
+  var activeIndex = -1;
+  function hide() { box.innerHTML = ''; box.classList.remove('open'); activeIndex = -1; }
+  input.addEventListener('input', function () {
+    var q = input.value.trim().toLowerCase();
+    if (!q) { hide(); return; }
+    var matches = suggestions.filter(function (s) { return s.label.toLowerCase().indexOf(q) !== -1; }).slice(0, 8);
+    if (!matches.length) { hide(); return; }
+    box.innerHTML = matches.map(function (m, idx) {
+      return '<a class="search-suggestion-item" href="' + m.href + '">' + m.label.replace(/</g,'&lt;') + '</a>';
+    }).join('');
+    box.classList.add('open');
+  });
+  document.addEventListener('click', function (e) {
+    if (!box.contains(e.target) && e.target !== input) { hide(); }
+  });
+})();
+</script>

@@ -12,6 +12,7 @@ const transcodeRecoveryService = require('./services/transcodeRecoveryService');
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const videoRoutes = require('./routes/videoRoutes');
+const learnRoutes = require('./routes/learnRoutes');
 const pageRoutes = require('./routes/pageRoutes');
 
 async function buildServer() {
@@ -58,13 +59,14 @@ async function buildServer() {
   await app.register(authRoutes, { prefix: '/auth' });
   await app.register(adminRoutes, { prefix: '/admin' });
   await app.register(videoRoutes, { prefix: '/videos' });
+  await app.register(learnRoutes, { prefix: '/learn' });
 
   app.get('/health', async () => ({ ok: true }));
 
   app.setErrorHandler((error, request, reply) => {
     app.log.error(error);
     const statusCode = error.statusCode || 500;
-    if (request.url.startsWith('/auth') || request.url.startsWith('/admin') || request.url.startsWith('/videos')) {
+    if (request.url.startsWith('/auth') || request.url.startsWith('/admin') || request.url.startsWith('/videos') || request.url.startsWith('/learn')) {
       return reply.status(statusCode).send({ error: error.message || 'Internal Server Error' });
     }
     return reply.status(statusCode).view('error.ejs', { message: error.message || 'Something went wrong' });

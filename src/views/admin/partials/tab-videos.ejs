@@ -1,0 +1,337 @@
+<section class="card">
+    <div class="section-header-inline">
+      <h2>Video Display Order</h2>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <span id="video-order-status" class="meta-text"></span>
+        <button type="button" id="save-video-order-btn" class="tab-link">Save Order</button>
+      </div>
+    </div>
+    <p class="meta-text">Drag rows to set the order videos appear on the viewer page. The top 6 display by default.</p>
+    <% if (!publishedVideosForOrder.length) { %>
+      <p class="meta-text">No published videos yet.</p>
+    <% } else { %>
+      <ul id="video-order-list" class="video-order-list">
+        <% publishedVideosForOrder.forEach(function(v) { %>
+          <li class="video-order-item" draggable="true" data-id="<%= v.id %>">
+            <span class="drag-handle" aria-hidden="true">&#9776;</span>
+            <% if (v.thumbnail_path) { %>
+              <img src="<%= v.thumbnail_path %>" class="video-order-thumb" alt="" />
+            <% } else { %>
+              <span class="video-order-thumb video-order-thumb-fallback">No img</span>
+            <% } %>
+            <span class="video-order-title"><%= v.title %></span>
+          </li>
+        <% }) %>
+      </ul>
+    <% } %>
+  </section>
+
+  <script>
+    (function () {
+      var list = document.getElementById('video-order-list');
+      var saveBtn = document.getElementById('save-video-order-btn');
+      var status = document.getElementById('video-order-status');
+      if (!list || !saveBtn) { return; }
+
+      var dragging = null;
+      var dragSrc = null;
+
+      list.addEventListener('dragstart', function (e) {
+        dragging = e.target.closest('li');
+        dragSrc = dragging;
+        if (dragging) {
+          dragging.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+        }
+      });
+
+      list.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        var target = e.target.closest('li');
+        if (!target || target === dragging) { return; }
+        var rect = target.getBoundingClientRect();
+        var mid = rect.top + rect.height / 2;
+        if (e.clientY < mid) {
+          list.insertBefore(dragging, target);
+        } else {
+          list.insertBefore(dragging, target.nextSibling);
+        }
+      });
+
+      list.addEventListener('dragend', function () {
+        if (dragging) { dragging.classList.remove('dragging'); }
+        dragging = null;
+        dragSrc = null;
+      });
+
+      saveBtn.addEventListener('click', async function () {
+        var ids = Array.from(list.querySelectorAll('li[data-id]')).map(function (el) {
+          return Number(el.getAttribute('data-id'));
+        });
+        saveBtn.disabled = true;
+        status.textContent = 'Saving\u2026';
+        try {
+          var res = await fetch('/admin/videos/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.getCsrfToken() },
+            body: JSON.stringify({ ids: ids })
+          });
+          var data = await res.json();
+          if (!res.ok) { throw new Error((data && data.error) || 'Failed to save order'); }
+          status.textContent = 'Order saved!';
+          setTimeout(function () { status.textContent = ''; }, 2500);
+        } catch (err) {
+          status.textContent = 'Error: ' + (err.message || err);
+        } finally {
+          saveBtn.disabled = false;
+        }
+      });
+    })();
+  </script>
+
+  <section class="card">
+    <div class="section-header-inline">
+      <h2>Content management</h2>
+      <button type="button" class="icon-btn" id="admin-filter-toggle" aria-expanded="false" aria-label="Toggle filters">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+      </button>
+    </div>
+    <form method="get" action="/admin" class="video-filter-row">
+      <input type="hidden" name="tab" value="videos" />
+      <div class="video-filter-main">
+        <input type="text" name="videoQuery" value="<%= videoFilters.videoQuery || '' %>" placeholder="Search title or description" />
+      </div>
+      <div id="admin-filter-drawer" class="admin-filter-drawer video-filter-meta">
+        <input type="text" name="tag" value="<%= videoFilters.tag || '' %>" placeholder="Tag" />
+        <select name="status">
+          <option value="">All statuses</option>
+          <option value="processing" <%= videoFilters.status === 'processing' ? 'selected' : '' %>>Processing</option>
+          <option value="published" <%= videoFilters.status === 'published' ? 'selected' : '' %>>Published</option>
+          <option value="hidden" <%= videoFilters.status === 'hidden' ? 'selected' : '' %>>Hidden</option>
+          <option value="failed" <%= videoFilters.status === 'failed' ? 'selected' : '' %>>Failed</option>
+        </select>
+        <select name="sort">
+          <option value="newest" <%= videoFilters.sort === 'newest' ? 'selected' : '' %>>Newest</option>
+          <option value="oldest" <%= videoFilters.sort === 'oldest' ? 'selected' : '' %>>Oldest</option>
+          <option value="title" <%= videoFilters.sort === 'title' ? 'selected' : '' %>>Title</option>
+          <option value="status" <%= videoFilters.sort === 'status' ? 'selected' : '' %>>Status</option>
+        </select>
+        <button type="submit">Apply</button>
+      </div>
+    </form>
+
+    <% if (learningItems && learningItems.length) { %>
+      <h3>Documents &amp; free / external content</h3>
+      <% learningItems.filter(function(li) { return li.item_type !== 'premium_video'; }).forEach(function(li) { %>
+        <article class="admin-content-card admin-content-card--mobile-only">
+          <div class="admin-content-card__head">
+            <% if (li.thumbnail_path) { %>
+              <img src="<%= li.thumbnail_path %>" alt="" class="admin-content-card__thumb" />
+            <% } else { %>
+              <span class="admin-content-card__thumb"></span>
+            <% } %>
+            <div class="admin-content-card__title">
+              <strong><%= li.title %></strong>
+              <div class="admin-content-card__chips">
+                <span class="type-badge type-badge--<%= li.item_type %>"><%= li.item_type %></span>
+                <span class="access-badge access-badge--<%= li.access_level %>"><%= li.access_level %></span>
+                <span class="meta-text"><%= li.status %></span>
+              </div>
+            </div>
+            <div class="overflow-menu-wrap">
+              <button type="button" class="icon-btn" data-overflow-toggle aria-label="Actions">⋯</button>
+              <div class="overflow-menu">
+                <form method="post" action="/admin/learning-items/<%= li.id %>/publish"><button type="submit">Publish</button></form>
+                <form method="post" action="/admin/learning-items/<%= li.id %>/unpublish"><button type="submit">Hide</button></form>
+                <form method="post" action="/admin/learning-items/<%= li.id %>/delete" onsubmit="return confirm('Delete this item?');"><button type="submit" class="danger">Delete</button></form>
+              </div>
+            </div>
+          </div>
+        </article>
+      <% }) %>
+    <% } %>
+
+    <h3>Premium videos (HLS)</h3>
+    <% videos.forEach((v) => { %>
+      <article class="admin-content-card admin-content-card--mobile-only">
+        <div class="admin-content-card__head">
+          <% if (v.thumbnail_path) { %><img src="<%= v.thumbnail_path %>" alt="" class="admin-content-card__thumb" /><% } %>
+          <div class="admin-content-card__title">
+            <strong>#<%= v.id %> <%= v.title %></strong>
+            <div class="admin-content-card__chips">
+              <span class="type-badge type-badge--premium_video">Premium</span>
+              <span class="meta-text"><%= v.status %></span>
+            </div>
+          </div>
+          <div class="overflow-menu-wrap">
+            <button type="button" class="icon-btn" data-overflow-toggle aria-label="Actions">⋯</button>
+            <div class="overflow-menu">
+              <form method="post" action="/admin/videos/<%= v.id %>/publish"><button type="submit">Publish</button></form>
+              <form method="post" action="/admin/videos/<%= v.id %>/unpublish"><button type="submit">Hide</button></form>
+              <form method="post" action="/admin/videos/<%= v.id %>/delete" onsubmit="return confirm('Delete?');"><button type="submit" class="danger">Delete</button></form>
+            </div>
+          </div>
+        </div>
+      </article>
+    <% }) %>
+
+    <% videos.forEach((v) => { %>
+      <details class="video-collapsible">
+        <summary>
+          <span><strong>#<%= v.id %> <%= v.title %></strong></span>
+          <span>Status: <%= v.status %></span>
+          <% if (v.repair_state === 'source_missing') { %>
+            <span class="transcoding-badge" style="background:var(--danger-soft);color:var(--danger)">Source missing</span>
+          <% } else if (v.repair_state === 'hls_missing') { %>
+            <span class="transcoding-badge">HLS missing</span>
+          <% } %>
+          <span>Created: <%= new Date(v.created_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %></span>
+        </summary>
+        <div class="video-collapsible-body">
+          <div class="video-thumb-current-wrap">
+            <% if (v.thumbnail_path) { %>
+              <img src="<%= v.thumbnail_path %>" alt="Current thumbnail" class="thumb video-thumb-current" id="video-thumb-preview-<%= v.id %>" />
+            <% } else { %>
+              <div class="thumb thumb-fallback video-thumb-current" id="video-thumb-preview-<%= v.id %>">No thumbnail</div>
+            <% } %>
+          </div>
+          <p class="meta-text">Job: <%= v.job_status || '-' %> <% if (v.job_attempts) { %>(attempts: <%= v.job_attempts %>)<% } %></p>
+          <% if (v.repair_message) { %>
+            <p class="<%= v.repair_state === 'source_missing' ? 'error' : 'meta-text' %>"><%= v.repair_message %></p>
+          <% } %>
+          <% if (v.job_error) { %><p class="error"><%= v.job_error %></p><% } %>
+          <form method="post" action="/admin/videos/<%= v.id %>/update" enctype="multipart/form-data" class="form-grid">
+            <label>Title</label>
+            <input type="text" name="title" value="<%= v.title %>" required />
+            <label>Description</label>
+            <textarea name="description" rows="3"><%= v.description || '' %></textarea>
+            <label>Tags</label>
+            <input type="text" name="tags" value="<%= v.tags || '' %>" />
+            <label>Replace Thumbnail</label>
+            <label class="dropzone video-thumb-dropzone" for="video-thumb-input-<%= v.id %>">
+              <span class="dropzone-title">Drop thumbnail here or click to choose</span>
+              <span class="dropzone-subtitle">PNG/JPG/WEBP</span>
+              <input
+                type="file"
+                id="video-thumb-input-<%= v.id %>"
+                class="video-thumb-input"
+                name="thumbnailFile"
+                accept="image/png,image/jpeg,image/webp"
+                data-preview-id="video-thumb-preview-<%= v.id %>"
+                data-file-label-id="video-thumb-name-<%= v.id %>"
+              />
+              <span class="dropzone-file-list" id="video-thumb-name-<%= v.id %>">No thumbnail selected</span>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" name="removeThumbnail" value="true" />
+              <span>Remove existing thumbnail</span>
+            </label>
+            <button type="submit">Save changes</button>
+          </form>
+          <div class="inline-actions">
+            <form method="post" action="/admin/videos/<%= v.id %>/publish"><button type="submit">Publish</button></form>
+            <form method="post" action="/admin/videos/<%= v.id %>/unpublish"><button type="submit">Hide</button></form>
+            <% if (v.can_repair) { %>
+              <form method="post" action="/admin/videos/<%= v.id %>/retry"><button type="submit">Repair playback</button></form>
+            <% } else { %>
+              <form method="post" action="/admin/videos/<%= v.id %>/retry"><button type="submit">Retry transcode</button></form>
+            <% } %>
+            <form method="post" action="/admin/videos/<%= v.id %>/delete" onsubmit="return confirm('Delete this video and all related media?');"><button type="submit" class="danger">Delete</button></form>
+          </div>
+        </div>
+      </details>
+    <% }) %>
+
+    <div class="pagination-row">
+      <% if (videoPage > 1) { %>
+        <a class="tab-link" href="/admin?tab=videos&videoPage=<%= videoPage - 1 %>&videoQuery=<%= encodeURIComponent(videoFilters.videoQuery || '') %>&tag=<%= encodeURIComponent(videoFilters.tag || '') %>&status=<%= encodeURIComponent(videoFilters.status || '') %>&sort=<%= encodeURIComponent(videoFilters.sort || 'newest') %>">Prev</a>
+      <% } %>
+      <span>Page <%= videoPage %> / <%= totalVideoPages %></span>
+      <% if (videoPage < totalVideoPages) { %>
+        <a class="tab-link" href="/admin?tab=videos&videoPage=<%= videoPage + 1 %>&videoQuery=<%= encodeURIComponent(videoFilters.videoQuery || '') %>&tag=<%= encodeURIComponent(videoFilters.tag || '') %>&status=<%= encodeURIComponent(videoFilters.status || '') %>&sort=<%= encodeURIComponent(videoFilters.sort || 'newest') %>">Next</a>
+      <% } %>
+    </div>
+  </section>
+
+  <script>
+    (function () {
+      var thumbInputs = Array.prototype.slice.call(document.querySelectorAll('.video-thumb-input'));
+      if (!thumbInputs.length) {
+        return;
+      }
+
+      function setPreviewFromFile(input, file) {
+        if (!file) {
+          return;
+        }
+        var previewId = input.getAttribute('data-preview-id');
+        var labelId = input.getAttribute('data-file-label-id');
+        var preview = previewId ? document.getElementById(previewId) : null;
+        var label = labelId ? document.getElementById(labelId) : null;
+        if (label) {
+          label.textContent = file.name;
+        }
+        if (!preview || !file.type || file.type.indexOf('image/') !== 0) {
+          return;
+        }
+
+        var url = URL.createObjectURL(file);
+        if (preview.tagName === 'IMG') {
+          preview.src = url;
+          return;
+        }
+
+        var img = document.createElement('img');
+        img.className = 'thumb video-thumb-current';
+        img.id = preview.id;
+        img.alt = 'Thumbnail preview';
+        img.src = url;
+        preview.replaceWith(img);
+      }
+
+      function bindDropzone(input) {
+        var dropzone = input.closest('.dropzone');
+        if (!dropzone) {
+          return;
+        }
+
+        input.addEventListener('change', function () {
+          var file = (input.files || [])[0];
+          setPreviewFromFile(input, file);
+        });
+
+        ['dragenter', 'dragover'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.add('dragover');
+          });
+        });
+
+        ['dragleave', 'dragend'].forEach(function (eventName) {
+          dropzone.addEventListener(eventName, function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            dropzone.classList.remove('dragover');
+          });
+        });
+
+        dropzone.addEventListener('drop', function (event) {
+          event.preventDefault();
+          event.stopPropagation();
+          dropzone.classList.remove('dragover');
+          var dt = event.dataTransfer;
+          var file = dt && dt.files && dt.files[0];
+          if (!file) {
+            return;
+          }
+          input.files = dt.files;
+          setPreviewFromFile(input, file);
+        });
+      }
+
+      thumbInputs.forEach(bindDropzone);
+    })();
+  </script>
+<% } %>

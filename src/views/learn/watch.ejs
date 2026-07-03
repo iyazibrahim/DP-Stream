@@ -1,0 +1,139 @@
+<%- include('../partials/head.ejs', { title: item.title, user, bodyClass: 'page-watch' }) %>
+
+<% if (item.item_type === 'external_video' && external) { %>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css" />
+<% } %>
+<% if (item.item_type === 'free_video') { %>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css" />
+<% } %>
+
+<section class="card watch-page">
+  <div class="watch-meta watch-meta--top">
+    <div class="watch-badges">
+      <span class="type-badge type-badge--<%= item.item_type %>"><%= item.item_type.replace('_',' ') %></span>
+      <% if (item.item_type === 'external_video') { %><span class="meta-text">Hosted externally</span><% } %>
+    </div>
+    <h1><%= item.title %></h1>
+    <% if (course) { %>
+      <div class="course-banner">
+        <strong><%= course.name %></strong>
+        <% if (course.description) { %><p class="meta-text"><%= course.description %></p><% } %>
+      </div>
+    <% } %>
+  </div>
+
+  <% if (item.item_type === 'external_video' && external) { %>
+    <div class="embed-wrapper">
+      <iframe src="<%= external.embedUrl %>" title="<%= item.title %>" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>
+    </div>
+  <% } else if (item.item_type === 'free_video') { %>
+    <div class="video-wrapper" id="video-wrapper">
+      <% if (user) { %><div class="watermark"><%= user.email %> · <span id="wm-time"></span></div><% } %>
+      <video id="video-player" playsinline class="player" controls></video>
+    </div>
+  <% } else if (item.item_type === 'document') { %>
+    <div class="document-viewer-wrap">
+      <% if (item.document_mime === 'application/pdf') { %>
+        <iframe id="pdf-viewer" class="pdf-viewer" title="<%= item.title %>"></iframe>
+      <% } else { %>
+        <div class="document-fallback">
+          <p>This file type is best viewed after download.</p>
+          <a class="tab-link" id="document-download-link" href="#">Download <%= item.document_filename || 'document' %></a>
+        </div>
+      <% } %>
+    </div>
+  <% } %>
+
+  <div class="watch-meta">
+    <div class="video-description-block">
+      <h3>Description</h3>
+      <p><%= item.description || 'No description provided.' %></p>
+      <% if (user) { %>
+        <p id="completed-state" class="meta-text">
+          <% if (progress && progress.completed_at) { %>
+            Completed on <%= new Date(progress.completed_at).toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }) %>
+          <% } else { %>Not completed yet<% } %>
+        </p>
+        <% if (item.item_type === 'external_video' || (item.item_type === 'document' && item.document_mime !== 'application/pdf')) { %>
+          <button type="button" id="mark-complete-btn" class="tab-link">Mark as complete</button>
+        <% } %>
+      <% } %>
+    </div>
+
+    <% if (playlistItems && playlistItems.length) { %>
+      <div class="playlist-panel">
+        <h3>Course playlist</h3>
+        <% playlistItems.forEach((pl) => { %>
+          <a class="playlist-item <%= pl.id === item.id ? 'active' : '' %>" href="/learn/<%= pl.id %>">
+            <span class="playlist-type-icon" aria-hidden="true"><%= pl.item_type === 'document' ? '📄' : '▶' %></span>
+            <span>#<%= pl.order_index %> <%= pl.title %></span>
+            <% if (pl.completed_at) { %><span class="completed-pill">Done</span><% } %>
+          </a>
+        <% }) %>
+      </div>
+    <% } %>
+  </div>
+</section>
+
+<% if (item.item_type === 'free_video') { %>
+<script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.polyfilled.min.js"></script>
+<script>
+(function () {
+  var itemId = '<%= item.id %>';
+  var wm = document.getElementById('wm-time');
+  if (wm) { wm.textContent = new Date().toLocaleString('en-MY', { timeZone: 'Asia/Kuala_Lumpur' }); }
+  var video = document.getElementById('video-player');
+  var player = null;
+  fetch('/learn/' + itemId + '/document-token', { method: 'POST', headers: { 'X-CSRF-Token': window.getCsrfToken() }, credentials: 'same-origin' })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      video.src = '/learn/' + itemId + '/stream?token=' + encodeURIComponent(data.token);
+      player = new Plyr(video);
+      <% if (user && progress) { %>
+      var start = <%= Math.max(0, Number(progress.last_position_seconds || 0)) %>;
+      if (start > 0) { video.currentTime = start; }
+      setInterval(function () {
+        if (!player || !player.playing) { return; }
+        fetch('/learn/' + itemId + '/progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': window.getCsrfToken() },
+          body: JSON.stringify({ positionSeconds: Math.floor(player.currentTime || 0), durationSeconds: Math.floor(player.duration || 0) }),
+          credentials: 'same-origin'
+        });
+      }, 15000);
+      <% } %>
+    });
+})();
+</script>
+<% } %>
+
+<% if (item.item_type === 'document' && item.document_mime === 'application/pdf') { %>
+<script>
+(function () {
+  var itemId = '<%= item.id %>';
+  fetch('/learn/' + itemId + '/document-token', { method: 'POST', headers: { 'X-CSRF-Token': window.getCsrfToken() }, credentials: 'same-origin' })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var url = '/learn/' + itemId + '/document?token=' + encodeURIComponent(data.token);
+      var frame = document.getElementById('pdf-viewer');
+      if (frame) { frame.src = url; }
+      var dl = document.getElementById('document-download-link');
+      if (dl) { dl.href = url; }
+      <% if (user) { %>
+      fetch('/learn/' + itemId + '/complete', { method: 'POST', headers: { 'X-CSRF-Token': window.getCsrfToken() }, credentials: 'same-origin' });
+      <% } %>
+    });
+})();
+</script>
+<% } %>
+
+<% if (user && (item.item_type === 'external_video' || (item.item_type === 'document' && item.document_mime !== 'application/pdf'))) { %>
+<script>
+document.getElementById('mark-complete-btn').addEventListener('click', function () {
+  fetch('/learn/<%= item.id %>/complete', { method: 'POST', headers: { 'X-CSRF-Token': window.getCsrfToken() }, credentials: 'same-origin' })
+    .then(function () { window.location.reload(); });
+});
+</script>
+<% } %>
+
+<%- include('../partials/foot.ejs') %>

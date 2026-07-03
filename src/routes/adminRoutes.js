@@ -9,7 +9,7 @@ const authService = require('../services/authService');
 const settingsService = require('../services/settingsService');
 const videoService = require('../services/videoService');
 const mediaPathsService = require('../services/mediaPathsService');
-const transcodeJobService = require('../services/transcodeJobService');
+const learningItemService = require('../services/learningItemService');
 
 const PAGE_SIZE = 25;
 const VIDEO_PAGE_SIZE = 10;
@@ -139,6 +139,16 @@ async function createVideoAndQueueJob(fastify, params) {
   );
 
   transcodeJobService.queueTranscodeJob(fastify, jobRes.insertId, params.userId);
+
+  await learningItemService.createPremiumLearningItem(fastify, {
+    title: params.title,
+    description: params.description,
+    thumbnailPath: params.thumbnailPath,
+    tags: params.tags,
+    videoId,
+    userId: params.userId,
+    accessLevel: params.accessLevel || 'authenticated'
+  });
 
   await authService.logEvent(fastify, {
     actorUserId: params.userId,
@@ -282,10 +292,34 @@ async function adminRoutes(fastify) {
 
     const [courses] = await fastify.db.execute('SELECT * FROM courses ORDER BY created_at DESC');
     const [courseItems] = await fastify.db.execute(
-      `SELECT cv.id, cv.course_id, cv.video_id, cv.order_index, v.title
-       FROM course_videos cv
-       INNER JOIN videos v ON v.id = cv.video_id
-       ORDER BY cv.course_id ASC, cv.order_index ASC`
+      `SELECT ci.id, ci.course_id, ci.learning_item_id, ci.order_index,
+              li.title, li.item_type
+       FROM course_items ci
+       INNER JOIN learning_items li ON li.id = ci.learning_item_id
+       ORDER BY ci.course_id ASC, ci.order_index ASC`
+    );
+
+    const [allLearningItems] = await fastify.db.execute(
+      `SELECT id, title, item_type, status FROM learning_items ORDER BY created_at DESC`
+    );
+
+    const [learningItems] = await fastify.db.execute(
+      `SELECT li.*,
+              tj.status AS job_status,
+              tj.last_error AS job_error,
+              tj.attempts AS job_attempts
+       FROM learning_items li
+       LEFT JOIN videos v ON v.id = li.video_id
+       LEFT JOIN (
+         SELECT j1.*
+         FROM transcode_jobs j1
+         INNER JOIN (
+           SELECT video_id, MAX(id) AS max_id FROM transcode_jobs GROUP BY video_id
+         ) j2 ON j1.video_id = j2.video_id AND j1.id = j2.max_id
+       ) tj ON tj.video_id = li.video_id
+       WHERE li.item_type != 'premium_video' OR li.video_id IS NOT NULL
+       ORDER BY li.created_at DESC
+       LIMIT 50`
     );
 
     const [monitorRows] = await fastify.db.execute(
@@ -358,6 +392,8 @@ async function adminRoutes(fastify) {
       anomalyAlerts,
       courses,
       courseItems,
+      allLearningItems,
+      learningItems,
       allVideos,
       allowSignup: allowSignup === 'true',
       activeTab,
@@ -413,6 +449,7 @@ async function adminRoutes(fastify) {
         const id = Number(ids[i]);
         if (!Number.isFinite(id) || id < 1) continue;
         await conn.execute('UPDATE videos SET display_order = ? WHERE id = ?', [i + 1, id]);
+        await conn.execute('UPDATE learning_items SET display_order = ? WHERE video_id = ?', [i + 1, id]);
       }
       await conn.commit();
     } catch (e) {
@@ -852,6 +889,13 @@ async function adminRoutes(fastify) {
       [(fields.title || '').trim(), (fields.description || '').trim() || null, parseTags(fields.tags) || null, nextThumbnail, videoId]
     );
 
+    await learningItemService.updateLearningItemMetadata(fastify, videoId, {
+      title: (fields.title || '').trim(),
+      description: (fields.description || '').trim() || null,
+      thumbnailPath: nextThumbnail,
+      tags: parseTags(fields.tags) || null
+    });
+
     await authService.logEvent(fastify, {
       actorUserId: request.user.sub,
       action: 'admin.video_updated',
@@ -887,6 +931,7 @@ async function adminRoutes(fastify) {
 
     await fastify.db.execute('DELETE FROM video_progress WHERE video_id = ?', [videoId]);
     await fastify.db.execute('DELETE FROM course_videos WHERE video_id = ?', [videoId]);
+    await learningItemService.deleteLearningItemByVideoId(fastify, videoId);
     await fastify.db.execute('DELETE FROM playback_tokens WHERE video_id = ?', [videoId]);
     await fastify.db.execute('DELETE FROM transcode_jobs WHERE video_id = ?', [videoId]);
     await fastify.db.execute('DELETE FROM video_files WHERE video_id = ?', [videoId]);
@@ -902,12 +947,16 @@ async function adminRoutes(fastify) {
   });
 
   fastify.post('/videos/:id/publish', { preHandler: [fastify.requireAdmin] }, async (request, reply) => {
-    await fastify.db.execute('UPDATE videos SET status = "published", published_at = NOW() WHERE id = ?', [request.params.id]);
+    const videoId = Number(request.params.id);
+    await fastify.db.execute('UPDATE videos SET status = "published", published_at = NOW() WHERE id = ?', [videoId]);
+    await learningItemService.syncVideoStatusToLearningItem(fastify, videoId, 'published', new Date());
     return reply.redirect('/admin?tab=videos');
   });
 
   fastify.post('/videos/:id/unpublish', { preHandler: [fastify.requireAdmin] }, async (request, reply) => {
-    await fastify.db.execute('UPDATE videos SET status = "hidden" WHERE id = ?', [request.params.id]);
+    const videoId = Number(request.params.id);
+    await fastify.db.execute('UPDATE videos SET status = "hidden" WHERE id = ?', [videoId]);
+    await learningItemService.syncVideoStatusToLearningItem(fastify, videoId, 'hidden', null);
     return reply.redirect('/admin?tab=videos');
   });
 
@@ -1130,20 +1179,218 @@ async function adminRoutes(fastify) {
 
   fastify.post('/courses/:id/videos/add', { preHandler: [fastify.requireAdmin] }, async (request, reply) => {
     const courseId = Number(request.params.id);
-    const videoId = Number(request.body.videoId);
+    const learningItemId = Number(request.body.learningItemId || request.body.videoId);
     const orderIndex = Math.max(1, Number(request.body.orderIndex || 1));
+
+    const [itemRows] = await fastify.db.execute('SELECT id FROM learning_items WHERE id = ? LIMIT 1', [learningItemId]);
+    if (!itemRows[0]) {
+      return reply.code(400).send({ error: 'Learning item not found' });
+    }
+
     await fastify.db.execute(
-      `INSERT INTO course_videos (course_id, video_id, order_index)
+      `INSERT INTO course_items (course_id, learning_item_id, order_index)
        VALUES (?, ?, ?)
        ON DUPLICATE KEY UPDATE order_index = VALUES(order_index)`,
-      [courseId, videoId, orderIndex]
+      [courseId, learningItemId, orderIndex]
     );
+
+    const [videoRows] = await fastify.db.execute('SELECT video_id FROM learning_items WHERE id = ? LIMIT 1', [learningItemId]);
+    if (videoRows[0] && videoRows[0].video_id) {
+      await fastify.db.execute(
+        `INSERT INTO course_videos (course_id, video_id, order_index)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE order_index = VALUES(order_index)`,
+        [courseId, videoRows[0].video_id, orderIndex]
+      );
+    }
+
     return reply.redirect('/admin?tab=courses');
   });
 
   fastify.post('/courses/:id/videos/:itemId/remove', { preHandler: [fastify.requireAdmin] }, async (request, reply) => {
-    await fastify.db.execute('DELETE FROM course_videos WHERE id = ? AND course_id = ?', [request.params.itemId, request.params.id]);
+    const courseId = Number(request.params.id);
+    const itemId = Number(request.params.itemId);
+    const [rows] = await fastify.db.execute(
+      'SELECT learning_item_id FROM course_items WHERE id = ? AND course_id = ? LIMIT 1',
+      [itemId, courseId]
+    );
+    if (rows[0]) {
+      const [videoRows] = await fastify.db.execute(
+        'SELECT video_id FROM learning_items WHERE id = ? LIMIT 1',
+        [rows[0].learning_item_id]
+      );
+      if (videoRows[0] && videoRows[0].video_id) {
+        await fastify.db.execute(
+          'DELETE FROM course_videos WHERE course_id = ? AND video_id = ?',
+          [courseId, videoRows[0].video_id]
+        );
+      }
+    }
+    await fastify.db.execute('DELETE FROM course_items WHERE id = ? AND course_id = ?', [itemId, courseId]);
     return reply.redirect('/admin?tab=courses');
+  });
+
+  fastify.post('/content/create', { preHandler: [fastify.requireAdmin] }, async (request, reply) => {
+    const docsDir = path.resolve(process.cwd(), 'media/documents');
+    const freeDir = path.resolve(process.cwd(), 'media/free-videos');
+    const thumbsDir = path.resolve(process.cwd(), 'media/thumbnails');
+    videoService.ensureDir(docsDir);
+    videoService.ensureDir(freeDir);
+    videoService.ensureDir(thumbsDir);
+
+    const fields = {};
+    let thumbnailPath = null;
+    let documentPath = null;
+    let documentMime = null;
+    let documentFilename = null;
+    let sourcePath = null;
+
+    for await (const part of request.parts()) {
+      if (part.type === 'file') {
+        if (part.fieldname === 'thumbnailFile' && part.filename && part.mimetype && part.mimetype.startsWith('image/')) {
+          const ext = path.extname(part.filename || '').toLowerCase() || '.jpg';
+          const thumbAbs = path.join(thumbsDir, `content_${Date.now()}_${nanoid(8)}${ext}`);
+          await saveFilePart(part, thumbAbs);
+          thumbnailPath = toRelativeMediaPath(thumbAbs);
+        } else if (part.fieldname === 'documentFile' && part.filename) {
+          if (!learningItemService.isDocumentFile(part.filename, part.mimetype)) {
+            part.file.resume();
+            continue;
+          }
+          const ext = path.extname(part.filename).toLowerCase();
+          const abs = path.join(docsDir, `${nanoid(12)}${ext}`);
+          await saveFilePart(part, abs);
+          documentPath = toRelativeMediaPath(abs);
+          documentMime = part.mimetype || 'application/octet-stream';
+          documentFilename = part.filename;
+        } else if (part.fieldname === 'videoFile' && part.filename) {
+          const ext = getSafeVideoExtension(part.filename, part.mimetype);
+          if (!ext) {
+            part.file.resume();
+            continue;
+          }
+          const abs = path.join(freeDir, `${nanoid(12)}${ext}`);
+          await saveFilePart(part, abs);
+          sourcePath = toRelativeMediaPath(abs);
+        } else {
+          part.file.resume();
+        }
+      } else {
+        fields[part.fieldname] = part.value;
+      }
+    }
+
+    const itemType = String(fields.itemType || '').trim();
+    const title = String(fields.title || '').trim();
+    const accessLevel = fields.accessLevel === 'public' ? 'public' : 'authenticated';
+    if (!title) {
+      return reply.code(400).send({ error: 'Title is required' });
+    }
+
+    if (itemType === 'external_video') {
+      const parsed = learningItemService.parseExternalUrl(fields.externalUrl);
+      if (!parsed) {
+        return reply.code(400).send({ error: 'Unsupported or invalid video URL' });
+      }
+      await fastify.db.execute(
+        `INSERT INTO learning_items (
+          title, description, thumbnail_path, tags, item_type, access_level, status,
+          external_url, external_provider, external_video_id, created_by, published_at
+        ) VALUES (?, ?, ?, ?, 'external_video', ?, 'published', ?, ?, ?, ?, NOW())`,
+        [
+          title,
+          (fields.description || '').trim() || null,
+          thumbnailPath,
+          parseTags(fields.tags) || null,
+          accessLevel,
+          String(fields.externalUrl || '').trim(),
+          parsed.provider,
+          parsed.videoId,
+          request.user.sub
+        ]
+      );
+      return reply.redirect('/admin?tab=upload');
+    }
+
+    if (itemType === 'document') {
+      if (!documentPath) {
+        return reply.code(400).send({ error: 'Document file is required' });
+      }
+      await fastify.db.execute(
+        `INSERT INTO learning_items (
+          title, description, thumbnail_path, tags, item_type, access_level, status,
+          document_path, document_mime, document_filename, created_by, published_at
+        ) VALUES (?, ?, ?, ?, 'document', ?, 'published', ?, ?, ?, ?, NOW())`,
+        [
+          title,
+          (fields.description || '').trim() || null,
+          thumbnailPath,
+          parseTags(fields.tags) || null,
+          accessLevel,
+          documentPath,
+          documentMime,
+          documentFilename,
+          request.user.sub
+        ]
+      );
+      return reply.redirect('/admin?tab=upload');
+    }
+
+    if (itemType === 'free_video') {
+      if (!sourcePath) {
+        return reply.code(400).send({ error: 'Video file is required' });
+      }
+      await fastify.db.execute(
+        `INSERT INTO learning_items (
+          title, description, thumbnail_path, tags, item_type, access_level, status,
+          source_path, created_by, published_at
+        ) VALUES (?, ?, ?, ?, 'free_video', ?, 'published', ?, ?, NOW())`,
+        [
+          title,
+          (fields.description || '').trim() || null,
+          thumbnailPath,
+          parseTags(fields.tags) || null,
+          accessLevel,
+          sourcePath,
+          request.user.sub
+        ]
+      );
+      return reply.redirect('/admin?tab=upload');
+    }
+
+    return reply.code(400).send({ error: 'Invalid content type' });
+  });
+
+  fastify.post('/learning-items/:id/publish', { preHandler: [fastify.requireAdmin] }, async (request, reply) => {
+    await fastify.db.execute(
+      'UPDATE learning_items SET status = "published", published_at = NOW() WHERE id = ?',
+      [request.params.id]
+    );
+    return reply.redirect('/admin?tab=videos');
+  });
+
+  fastify.post('/learning-items/:id/unpublish', { preHandler: [fastify.requireAdmin] }, async (request, reply) => {
+    await fastify.db.execute('UPDATE learning_items SET status = "hidden" WHERE id = ?', [request.params.id]);
+    return reply.redirect('/admin?tab=videos');
+  });
+
+  fastify.post('/learning-items/:id/delete', { preHandler: [fastify.requireAdmin] }, async (request, reply) => {
+    const itemId = Number(request.params.id);
+    const item = await learningItemService.getItemById(fastify, itemId);
+    if (!item) {
+      return reply.redirect('/admin?tab=videos');
+    }
+    if (item.document_path) {
+      removeMediaFileIfExists(item.document_path);
+    }
+    if (item.source_path) {
+      removeMediaFileIfExists(item.source_path);
+    }
+    removeMediaFileIfExists(item.thumbnail_path);
+    await fastify.db.execute('DELETE FROM item_progress WHERE learning_item_id = ?', [itemId]);
+    await fastify.db.execute('DELETE FROM course_items WHERE learning_item_id = ?', [itemId]);
+    await fastify.db.execute('DELETE FROM learning_items WHERE id = ?', [itemId]);
+    return reply.redirect('/admin?tab=videos');
   });
 }
 

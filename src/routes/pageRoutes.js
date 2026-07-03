@@ -1,8 +1,8 @@
 const settingsService = require('../services/settingsService');
 
 async function pageRoutes(fastify) {
-  fastify.get('/', { preHandler: [fastify.requireAuth] }, async (request, reply) => {
-    return reply.redirect('/videos');
+  fastify.get('/', { preHandler: [fastify.optionalAuth] }, async (request, reply) => {
+    return reply.redirect('/learn');
   });
 
   fastify.get('/login', async (request, reply) => {
